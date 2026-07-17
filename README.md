@@ -4,18 +4,30 @@ Windows 多会话 RDP 一键部署工具。在任意 Windows 版本上启用多�
 
 ## 一键启动
 
-以管理员身份打开 PowerShell，粘贴以下命令：
+### 方式一：CMD / 管理员 PowerShell（推荐）
 
 ```powershell
-powershell "$env:GH_MIRROR = 'https://gh-proxy.com/';& ([scriptblock]::Create((irm 'https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
+powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
 ```
 
-脚本会自动提权到管理员，进入交互菜单。选 **1** 即可一键安装。
-
-> 如果所在网络能直连 GitHub，去掉 `GH_MIRROR`：
+> 能直连 GitHub 则更短：
 > ```powershell
-> powershell "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
+> powershell -c "irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
 > ```
+
+### 方式二：Win+R 运行
+
+Win+R 输入 `powershell`，按 `Ctrl+Shift+Enter`（以管理员身份运行），在弹出的蓝色窗口中粘贴方式一的命令。
+
+### 方式三：自动提权（完整版）
+
+从普通命令行启动，自动弹出 UAC 提权：
+
+```powershell
+powershell "$env:GH_MIRROR='https://gh-proxy.com/';& ([scriptblock]::Create((irm 'https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
+```
+
+进入菜单后选 **1** 即可一键安装。
 
 ## 功能
 
@@ -34,25 +46,17 @@ powershell "$env:GH_MIRROR = 'https://gh-proxy.com/';& ([scriptblock]::Create((i
 ## 本地运行
 
 ```powershell
-# 1. 克隆仓库
 git clone https://github.com/lcxxjmsg-cyber/rdp_warp_ps.git
 cd rdp_warp_ps
-
-# 2. 以管理员身份运行
 .\rdpwarps.ps1
 ```
 
-本地运行时 `bin/` 目录中的二进制文件会被优先使用，无需联网下载。
+本地运行时 `bin/` 目录中的文件被优先使用，无需联网下载。
 
-## 静默安装
+## 静默安装 / 卸载
 
 ```powershell
 .\rdpwarps.ps1 -Install
-```
-
-## 静默卸载
-
-```powershell
 .\rdpwarps.ps1 -Uninstall
 ```
 
@@ -74,6 +78,6 @@ cd rdp_warp_ps
 
 ## 注意事项
 
-- 安装后会自动注册看门狗（开机启动 + 每日 3AM 更新），确保 Windows 更新后 RDP 功能正常
-- 支持 GFW 网络环境，通过 `GH_MIRROR` 环境变量配置代理镜像
+- 安装后自动注册看门狗（开机启动 + 每日 3AM 更新），Windows 更新后自动修复 RDP
+- 不支持网络直连 GitHub 时，通过 `GH_MIRROR` 环境变量配置代理镜像
 - RemoteApp 功能需要 Windows Enterprise 或 Server 版本
