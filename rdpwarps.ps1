@@ -1187,14 +1187,14 @@ function Get-RdpStatus {
     $s.Installed = ($s.ServiceDll -like '*rdpwrap*')
     $svc = Get-Service -Name TermService -ErrorAction SilentlyContinue
     $s.ServiceStatus = if ($svc) { $svc.Status } else { 'Missing' }
-    $conn = Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue
+    $port = Get-ItemProperty -Path $REG_RDP_WS -Name PortNumber -ErrorAction SilentlyContinue
+    $s.Port = if ($port) { $port.PortNumber } else { 3389 }
+    $conn = Get-NetTCPConnection -LocalPort $s.Port -State Listen -ErrorAction SilentlyContinue
     $s.Listener = ($null -ne $conn)
     if ($s.Installed -and $s.TermsrvVersion -and (Test-Path $script:RDPWRAP_INI)) {
         $ini = Get-Content $script:RDPWRAP_INI -Raw -ErrorAction SilentlyContinue
         $s.IniOk = $ini -and $ini.Contains("[$($s.TermsrvVersion)]")
     } else { $s.IniOk = $false }
-    $port = Get-ItemProperty -Path $REG_RDP_WS -Name PortNumber -ErrorAction SilentlyContinue
-    $s.Port = if ($port) { $port.PortNumber } else { 3389 }
     try {
         $raw = @(qwinsta /SERVER:localhost 2>$null)
         $s.Sessions = @()
@@ -1227,7 +1227,7 @@ function Start-RdpService {
     if ($svc.Status -eq 'Running') { Write-S "TermService running" }
     else { Write-E "TermService: $($svc.Status)" }
 }
-function Restart-RdpService { Stop-RdpService; Start-RdpService }
+function Restart-RdpService { Stop-RdpService; Start-RdpService; Start-Sleep -Seconds 1; Start-Service -Name UmRdpService -ErrorAction SilentlyContinue }
 
 function Deploy-RdpwrapDll {
     $dllPath = Resolve-Binary "rdpwrap.dll"
@@ -1528,14 +1528,18 @@ function Show-ConfigMenu { param($Title,$Items)
 }
 
 function Set-RdpPort {
+    if (-not (Test-Admin)) { Write-E "$(T 'admin_required')"; Write-Host ""; cmd /c pause 2>&1 | Out-Null; return }
     $s = Get-RdpStatus
     Show-ConfigMenu (T 'menu_port_title') @("$(T 'menu_port_cur'): $($s.Port)","-","$(T 'menu_port_prompt')")
     $p = Read-Host "> "
     if ($p -match '^\d+$' -and [int]$p -gt 0 -and [int]$p -le 65535) {
         $port = [int]$p
-        & reg add $REG_RDP_WS /v PortNumber /t REG_DWORD /d $port /f 2>$null
-        & netsh advfirewall firewall delete rule name="Remote Desktop" 2>$null
-        & netsh advfirewall firewall add rule name="Remote Desktop" dir=in protocol=tcp localport=$port profile=any action=allow 2>$null
+        Set-RegDword $REG_RDP_WS PortNumber $port
+        $readback = Get-ItemProperty -Path $REG_RDP_WS -Name PortNumber -ErrorAction SilentlyContinue
+        if (-not $readback -or $readback.PortNumber -ne $port) { Write-E "Failed to write port to registry"; Write-Host ""; cmd /c pause 2>&1 | Out-Null; return }
+        & netsh advfirewall firewall delete rule name="Remote Desktop"
+        & netsh advfirewall firewall add rule name="Remote Desktop" dir=in protocol=tcp localport=$port profile=any action=allow
+        if ($LASTEXITCODE -ne 0) { Write-W "Firewall rule may not have been added (exit: $LASTEXITCODE)" }
         Restart-RdpService
         Write-S "$(T 'menu_port_done') $($env:COMPUTERNAME):$port"
     } else { Write-W "$(T 'inv_opt')" }
