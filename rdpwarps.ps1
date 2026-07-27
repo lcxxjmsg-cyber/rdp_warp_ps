@@ -1198,7 +1198,7 @@ function Get-TermsrvVersion {
 function Test-RdpwrapHealth { param([string]$LogPath,[string]$Version)
     if (-not $LogPath) {
         $ini = Get-Content $script:RDPWRAP_INI -Raw -ErrorAction SilentlyContinue
-        $LogPath = 'C:\rdpwrap.log'
+        $LogPath = "$script:RDPWRAP_DIR\rdpwrap.log"
         if ($ini -match 'LogFile\s*=\s*(.+)') {
             $raw = $matches[1].Trim()
             if ($raw -match '^[A-Za-z]:\\') { $LogPath = $raw }
@@ -1377,7 +1377,7 @@ function Install-RdpWrapperBinaries {
         $iniContent = @"
 [Main]
 Updated=2024-01-01
-LogFile=C:\rdpwrap.log
+LogFile=__LOG_PATH__
 SLPolicyHookNT60=1
 SLPolicyHookNT61=1
 
@@ -1429,6 +1429,7 @@ TerminalServices-DeviceRedirection-Licenses-PnpRedirectionAllowed=1
 TerminalServices-DeviceRedirection-Licenses-TSMFPluginAllowed=1
 TerminalServices-RemoteConnectionManager-UiEffects-DWMRemotingAllowed=1
 "@
+        $iniContent = $iniContent.Replace('__LOG_PATH__', "$script:RDPWRAP_DIR\rdpwrap.log")
         $iniContent | Out-File $script:TEMPLATE_INI -Encoding ASCII
         if (-not (Test-Path $script:RDPWRAP_INI)) { Copy-Item $script:TEMPLATE_INI $script:RDPWRAP_INI }
         Write-S "INI template deployed"
@@ -1489,7 +1490,7 @@ public class RDPOffsetFinder {
         $new = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
         if ($new.Content.Contains("[$ver]")) {
             Copy-Item $script:RDPWRAP_INI "$script:RDPWRAP_INI.bak" -Force
-            $content = $new.Content -replace 'LogFile\s*=\s*\\rdpwrap\.txt','LogFile=C:\rdpwrap.log'
+            $content = $new.Content -replace 'LogFile\s*=\s*\\rdpwrap\.txt',"LogFile=$script:RDPWRAP_DIR\rdpwrap.log"
             $content | Out-File $script:RDPWRAP_INI -Encoding ASCII
             Write-S "Downloaded INI supports $ver"; return $true
         }
