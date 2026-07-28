@@ -1198,7 +1198,7 @@ function Get-TermsrvVersion {
 function Test-RdpwrapHealth { param([string]$LogPath,[string]$Version)
     if (-not $LogPath) {
         $ini = Get-Content $script:RDPWRAP_INI -Raw -ErrorAction SilentlyContinue
-        $LogPath = "$script:RDPWRAP_DIR\rdpwrap.log"
+        $LogPath = 'C:\rdpwarp\rdpwrap.log'
         if ($ini -match 'LogFile\s*=\s*(.+)') {
             $raw = $matches[1].Trim()
             if ($raw -match '^[A-Za-z]:\\') { $LogPath = $raw }
@@ -1218,51 +1218,37 @@ function Test-RdpwrapHealth { param([string]$LogPath,[string]$Version)
         $result.Message = 'Log file empty'
         return $result
     }
-    $inSection = $false; $patches = @()
-    $keyNames = @('SingleUserPatch','DefPolicyPatch','SLInitHook','SLPolicyInternal','LocalOnlyPatch')
-    $errors = @(); $warnings = @(); $successes = @()
-    foreach ($line in $lines) {
-        if ($line -match '^\[') {
-            if ($inSection) { break }
-            if ($line.Trim() -eq "[$Version]") { $inSection = $true }
-            continue
-        }
-        if (-not $inSection) { continue }
-        if ($line -match '^(\w+(?:\.x86|\.x64))\s+(.+)') {
-            $patchName = $matches[1]; $detail = $matches[2].Trim()
-            $arch = if ($patchName -match '\.x86$') { 'x86' } else { 'x64' }
-            $base = $patchName -replace '\.(x86|x64)$',''
-            if ($detail -match '\[(\!|\?|NOT FOUND|not supported|FAILED|ERROR)') {
-                $errors += "$patchName $detail"
-            } elseif ($detail -match '\[(supported|patched)') {
-                $successes += "$patchName $detail"
-            } else {
-                $warnings += "$patchName $detail"
-            }
-            $patches += [PSCustomObject]@{Name=$base;Arch=$arch;Raw=$patchName;Detail=$detail}
-        }
-    }
-    $result.Patches = $patches
-    if (-not $inSection) {
-        $result.Message = 'Version section not found in log'
+    $verOk = ($lines | Where-Object { $_ -match '\bVersion:\s*' + [regex]::Escape($Version) }).Count -gt 0
+    if (-not $verOk) {
+        $result.Message = "Version line not found in log (expected $Version)"
         return $result
     }
-    if ($errors.Count -gt 0) {
-        $result.Message = "Patch errors: $($errors -join '; ')"
+    $patchLines = @($lines | Where-Object { $_ -match '^(Patch|Hook)\s' })
+    $errLines = @($lines | Where-Object { $_ -match '(FAILED|ERROR|\[!\]|not found|NOT FOUND)' })
+    $slInitLines = @($lines | Where-Object { $_ -match 'SLInit.*bServerSku' })
+    foreach ($p in $patchLines) {
+        $pName = if ($p -match '^Patch\s+(.+)$') { $matches[1] } elseif ($p -match '^Hook\s+(.+)$') { $matches[1] } else { 'Unknown' }
+        $result.Patches += [PSCustomObject]@{Name=$pName;Detail=$p.Trim()}
+    }
+    if ($errLines.Count -gt 0) {
+        $result.Message = "Patch errors in log: $($errLines -join ' | ')"
         return $result
     }
-    if ($patches.Count -eq 0) {
-        $result.Message = 'No patch entries found in log'
+    if ($patchLines.Count -eq 0) {
+        $result.Message = 'No Patch/Hook lines in log - patches may not have applied'
         return $result
     }
-    $critical = @('SingleUserPatch','DefPolicyPatch')
-    $missing = $critical | Where-Object { $n = $_; -not ($patches | Where-Object { $_.Name -eq $n -and $_.Detail -match '\[(supported|patched)' }) }
-    if ($missing) {
-        $result.Message = "Critical patches not applied: $($missing -join ', ')"
+    $hasSingleUser = ($patchLines | Where-Object { $_ -match 'SingleSession|CEnforcement|CSession' }).Count -gt 0
+    $hasDefPolicy = ($patchLines | Where-Object { $_ -match 'DefPolicy|CDefPolicy' }).Count -gt 0
+    $hasSLInit = $slInitLines.Count -gt 0
+    if (-not $hasSingleUser -or -not $hasDefPolicy) {
+        $result.Message = 'Critical patches missing in log'
         return $result
     }
     $result.Healthy = $true
-    $result.Message = 'All critical patches applied successfully'
+    $msg = "$($patchLines.Count) patches applied"
+    if ($hasSLInit) { $msg += ', SLInit OK' }
+    $result.Message = $msg
     return $result
 }
 
@@ -1371,6 +1357,9 @@ function Install-RdpWrapperBinaries {
     try {
         New-Item -ItemType Directory -Path $script:RDPWRAP_DIR -Force | Out-Null
         icacls $script:RDPWRAP_DIR /grant "SYSTEM:(OI)(CI)F" /grant "S-1-5-6:(OI)(CI)F" /q 2>$null
+        $logDir = 'C:\rdpwarp'
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        icacls $logDir /grant "SYSTEM:(OI)(CI)F" /q 2>$null
 
         if (-not (Deploy-RdpwrapDll)) { throw "Failed to deploy rdpwrap.dll" }
 
@@ -1429,7 +1418,7 @@ TerminalServices-DeviceRedirection-Licenses-PnpRedirectionAllowed=1
 TerminalServices-DeviceRedirection-Licenses-TSMFPluginAllowed=1
 TerminalServices-RemoteConnectionManager-UiEffects-DWMRemotingAllowed=1
 "@
-        $iniContent = $iniContent.Replace('__LOG_PATH__', "$script:RDPWRAP_DIR\rdpwrap.log")
+        $iniContent = $iniContent.Replace('__LOG_PATH__', 'C:\rdpwarp\rdpwrap.log')
         $iniContent | Out-File $script:TEMPLATE_INI -Encoding ASCII
         if (-not (Test-Path $script:RDPWRAP_INI)) { Copy-Item $script:TEMPLATE_INI $script:RDPWRAP_INI }
         Write-S "INI template deployed"
