@@ -1479,7 +1479,7 @@ public class RDPOffsetFinder {
         $new = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
         if ($new.Content.Contains("[$ver]")) {
             Copy-Item $script:RDPWRAP_INI "$script:RDPWRAP_INI.bak" -Force
-            $content = $new.Content -replace 'LogFile\s*=\s*\\rdpwrap\.txt',"LogFile=$script:RDPWRAP_DIR\rdpwrap.log"
+            $content = $new.Content -replace 'LogFile\s*=\s*\\rdpwrap\.txt','LogFile=C:\rdpwarp\rdpwrap.log'
             $content | Out-File $script:RDPWRAP_INI -Encoding ASCII
             Write-S "Downloaded INI supports $ver"; return $true
         }
