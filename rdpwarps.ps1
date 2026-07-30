@@ -16,7 +16,7 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
-$script:VERSION = "2.6.3"
+$script:VERSION = "2.6.4"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $langMap = @{
@@ -1843,8 +1843,15 @@ function Restore-RdpInstallState {
         Stop-RdpService
         foreach ($entry in $state.Registry) {
             if ($entry.Exists) {
-                New-Item -Path $entry.Path -Force -ErrorAction Stop | Out-Null
-                Set-ItemProperty -Path $entry.Path -Name $entry.Name -Value $entry.Value -Type $entry.Type -ErrorAction Stop
+                if (-not (Test-Path -LiteralPath $entry.Path)) {
+                    New-Item -Path $entry.Path -Force -ErrorAction Stop | Out-Null
+                }
+                $currentValue = Get-ItemProperty -LiteralPath $entry.Path -Name $entry.Name -ErrorAction SilentlyContinue
+                if ($null -ne $currentValue) {
+                    Set-ItemProperty -LiteralPath $entry.Path -Name $entry.Name -Value $entry.Value -ErrorAction Stop
+                } else {
+                    New-ItemProperty -LiteralPath $entry.Path -Name $entry.Name -Value $entry.Value -PropertyType $entry.Type -Force -ErrorAction Stop | Out-Null
+                }
             } else { Remove-ItemProperty -Path $entry.Path -Name $entry.Name -ErrorAction SilentlyContinue }
         }
         if ($state.TermServiceStartType -and $state.TermServiceStartType -ne 'Missing') {
