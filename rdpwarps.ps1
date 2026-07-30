@@ -16,7 +16,7 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
-$script:VERSION = "2.6.5"
+$script:VERSION = "2.6.7"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $langMap = @{
@@ -1893,6 +1893,29 @@ function Test-RdpHostCapability {
     }
 }
 
+function Test-RdpTcpRegistryHealth {
+    $result = [ordered]@{Healthy=$true;Port=$null;Missing=@();Message=''}
+    if (-not (Test-Path -LiteralPath $REG_RDP_WS)) {
+        $result.Healthy = $false
+        $result.Missing = @('RDP-Tcp registry key')
+    } else {
+        $properties = Get-ItemProperty -LiteralPath $REG_RDP_WS -ErrorAction SilentlyContinue
+        $port = 0
+        if ($properties) { [void][int]::TryParse([string]$properties.PortNumber,[ref]$port) }
+        if ($port -lt 1 -or $port -gt 65535) { $result.Missing += 'PortNumber' } else { $result.Port = $port }
+        if ($null -eq $properties.fEnableWinStation) { $result.Missing += 'fEnableWinStation' }
+        if ([string]::IsNullOrWhiteSpace([string]$properties.WdName)) { $result.Missing += 'WdName' }
+        if ([string]::IsNullOrWhiteSpace([string]$properties.WinStationName)) { $result.Missing += 'WinStationName' }
+        if ($result.Missing.Count -gt 0) { $result.Healthy = $false }
+    }
+    $result.Message = if ($result.Healthy) {
+        "Native RDP-Tcp listener configuration is complete (port $($result.Port))"
+    } else {
+        "Native RDP-Tcp listener configuration is incomplete: $($result.Missing -join ', ')"
+    }
+    return [PSCustomObject]$result
+}
+
 function Get-RdpFirewallRuleNames {
     param([int]$Port)
     return @("rdpwarp-RDP-TCP-$Port-In","rdpwarp-RDP-UDP-$Port-In")
@@ -1964,6 +1987,12 @@ function Invoke-Install {
     $capability = Test-RdpHostCapability
     if (-not $capability.CanInstall) { Write-E $capability.Message; return }
     if ($capability.NativeHostSupported) { Write-S $capability.Message } else { Write-W $capability.Message }
+    $rdpTcpHealth = Test-RdpTcpRegistryHealth
+    if (-not $rdpTcpHealth.Healthy) {
+        Write-E $rdpTcpHealth.Message
+        Write-E 'Installation stopped because an old uninstall or registry tool damaged the native listener configuration'
+        return
+    }
     if ((Get-RdpStatus).Installed) {
         Write-W "rdpwarp already installed."
         Write-I "Run the script again for menu options, or use -Uninstall to remove."
@@ -2048,6 +2077,24 @@ function Invoke-Install {
         $expandedDll = [Environment]::ExpandEnvironmentVariables([string]$configuredDll)
         $processArch = if ([Environment]::Is64BitProcess) { 'x64' } else { 'x86' }
         Write-E "Runtime diagnostic: ServiceDll=$configuredDll; expanded=$expandedDll; exists=$(Test-Path -LiteralPath $expandedDll); process=$processArch"
+        $termServiceRuntime = Get-CimInstance Win32_Service -Filter "Name='TermService'" -ErrorAction SilentlyContinue
+        $loadedRdpModules = @()
+        $moduleReadError = $null
+        if ($termServiceRuntime.ProcessId -gt 0) {
+            try {
+                $loadedRdpModules = @((Get-Process -Id $termServiceRuntime.ProcessId -Module -ErrorAction Stop | Where-Object { $_.ModuleName -match '^(rdpwrap|termsrv)\.dll$' }).ModuleName)
+            } catch { $moduleReadError = $_.Exception.Message }
+        }
+        Write-E "Runtime process: pid=$($termServiceRuntime.ProcessId); loadedRdpModules=$($loadedRdpModules -join ','); moduleReadError=$moduleReadError"
+        $ciEvents = @(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-CodeIntegrity/Operational';StartTime=(Get-Date).AddMinutes(-10)} -MaxEvents 100 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'rdpwrap|TermService' } | Select-Object -First 10)
+        if ($ciEvents.Count -gt 0) {
+            foreach ($ciEvent in $ciEvents) { Write-E "CodeIntegrity event $($ciEvent.Id): $($ciEvent.Message -replace '[\r\n]+',' ')" }
+        } else {
+            Write-I 'No matching Code Integrity event was found in the last 10 minutes'
+        }
+        foreach ($candidateLog in @('C:\rdpwrap.txt',"$script:RDPWRAP_DIR\rdpwrap.txt",'C:\rdpwarp\rdpwrap.log') | Select-Object -Unique) {
+            Write-I "Log probe: $candidateLog exists=$(Test-Path -LiteralPath $candidateLog)"
+        }
         $failure = "Runtime verification failed ($($s.SupportState)): $($s.HealthMessage)"
         Invoke-RdpInstallRollback $failure
         Write-E 'Installation was rolled back; multi-session RDP was not declared supported'
@@ -2068,12 +2115,33 @@ function Invoke-Uninstall {
     Unregister-RdpWatchdog
     if (Restore-RdpInstallState -CleanupFiles) { Write-S "$(T 'uninstall_done') Original registry, port, service, FPS and Defender state restored" }
     else {
-        Write-W 'State snapshot unavailable; performing a conservative legacy uninstall'
-        $installedPort = Get-RegDword $REG_RDP_WS PortNumber
-        if ($installedPort) { Remove-RdpFirewallPort ([int]$installedPort) }
+        Write-W 'State snapshot unavailable; performing an old-version compatible uninstall'
+        $legacyPort = 0
+        $legacyPortValue = Get-RegDword $REG_RDP_WS PortNumber
+        if ($null -ne $legacyPortValue) { [void][int]::TryParse([string]$legacyPortValue,[ref]$legacyPort) }
+        if ($legacyPort -lt 1 -or $legacyPort -gt 65535) {
+            $legacyPort = 3389
+            Set-RegDword $REG_RDP_WS PortNumber $legacyPort | Out-Null
+            Write-W 'Legacy installation had no valid RDP port; restored the Windows default port 3389'
+        } else {
+            Write-I "Preserving legacy/system RDP port: $legacyPort"
+        }
         Stop-RdpService
-        Set-ItemProperty -Path $REG_TS -Name ServiceDll -Value "%SystemRoot%\System32\termsrv.dll" -Type ExpandString
+        Set-ItemProperty -Path $REG_TS -Name ServiceDll -Value "%SystemRoot%\System32\termsrv.dll" -Type ExpandString -ErrorAction Stop
+        Remove-ItemProperty -LiteralPath $REG_TS -Name ServiceDllUnloadOnStop -ErrorAction SilentlyContinue
+        if (-not (Set-RegDword $REG_RDP fDenyTSConnections 0)) { Write-W 'Could not keep native Remote Desktop enabled during legacy cleanup' }
+        if (-not (Add-RdpFirewallPort $legacyPort)) { Write-W "Could not restore TCP/UDP firewall rules for native RDP port $legacyPort" }
         Start-RdpService
+        $legacyListener = $false
+        for ($attempt=0; $attempt -lt 20; $attempt++) {
+            if (Get-NetTCPConnection -State Listen -LocalPort $legacyPort -ErrorAction SilentlyContinue) { $legacyListener=$true;break }
+            Start-Sleep -Milliseconds 500
+        }
+        if ($legacyListener -and (Test-RdpProtocolHandshake -Port $legacyPort)) {
+            Write-S "Native RDP restored and verified on port $legacyPort"
+        } else {
+            Write-E "Native RDP did not recover on port $legacyPort; the legacy uninstall may have damaged RDP-Tcp registry configuration"
+        }
         if (Test-Path $script:RDPWRAP_DIR) { Remove-Item $script:RDPWRAP_DIR -Recurse -Force }
         Write-S $(T 'uninstall_done')
     }
