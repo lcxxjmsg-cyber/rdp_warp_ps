@@ -2,7 +2,7 @@
 
 Windows 多会话 RDP 部署与维护脚本，集成 RDP Wrapper、社区 INI、OffsetFinder、运行时健康检查、端口与防火墙管理以及自动修复看门狗。
 
-> 当前脚本版本：**2.6.0**
+> 当前脚本版本：**2.6.2**
 >
 > 本项目不承诺支持所有 Windows 构建。只有配置校验、服务启动、端口监听、RDP 协议握手和补丁日志检查全部通过后，脚本才会报告 **Supported**；否则会明确报告不支持或配置无效。
 
@@ -36,7 +36,7 @@ powershell "$env:GH_MIRROR='https://gh-proxy.com/';& ([scriptblock]::Create((irm
 ## 功能
 
 - 一键安装/卸载 rdpwrap，启用多会话 RDP
-- 安装前检查 termsrv.dll、TermService 和 RDP-Tcp 组件，默认启用 3389 与 TCP/UDP 防火墙规则
+- 安装前检查 termsrv.dll、TermService 和 RDP-Tcp 组件；保留系统当前有效 RDP 端口并开放对应 TCP/UDP 防火墙规则，仅在端口缺失或无效时回退到 3389
 - 会话设置（最大并发数、每用户单会话）
 - 安全设置（NLA、安全层）
 - 影子模式（远程协助控制）

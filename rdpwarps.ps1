@@ -16,7 +16,7 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
-$script:VERSION = "2.6.0"
+$script:VERSION = "2.6.2"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $langMap = @{
@@ -1218,15 +1218,28 @@ function Test-BinaryIntegrity {
 function Resolve-Binary {
     param($Filename)
     $local = if ($script:BIN_DIR) { Join-Path $script:BIN_DIR $Filename } else { $null }
-    if ($local -and (Test-Path $local) -and (Test-BinaryIntegrity $Filename $local)) { return $local }
+    if ($local -and (Test-Path $local)) {
+        if (Test-FileSha256 -Path $local -Expected $script:BINARY_SHA256[$Filename] -Label "$Filename local candidate") { return $local }
+        Write-W "Rejected local binary; checking the verified cache and download source"
+    }
     $fallback = Join-Path $script:FALLBACK_DIR $Filename
-    if ((Test-Path $fallback) -and (Test-BinaryIntegrity $Filename $fallback)) { return $fallback }
+    if (Test-Path $fallback) {
+        if (Test-FileSha256 -Path $fallback -Expected $script:BINARY_SHA256[$Filename] -Label "$Filename cached candidate") {
+            Write-I "Using verified cached binary: $fallback"
+            return $fallback
+        }
+        Remove-Item $fallback -Force -ErrorAction SilentlyContinue
+    }
     try {
         New-Item $script:FALLBACK_DIR -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
         $url = "$script:GH_RAW/bin/$Filename"
         $out = Join-Path $script:FALLBACK_DIR $Filename
         Invoke-GitHubDownload -Uri $url -OutFile $out | Out-Null
-        if ((Test-Path $out) -and (Test-BinaryIntegrity $Filename $out)) { return $out }
+        if ((Test-Path $out) -and (Test-FileSha256 -Path $out -Expected $script:BINARY_SHA256[$Filename] -Label "$Filename downloaded candidate")) {
+            Write-I "Using verified downloaded binary via $($script:GH_RAW)"
+            return $out
+        }
+        Remove-Item $out -Force -ErrorAction SilentlyContinue
     } catch { }
     return $null
 }
@@ -1768,8 +1781,15 @@ function Get-RegDword { param($Path,$Name) $v = Get-ItemProperty -Path $Path -Na
 function Set-RegDword {
     param($Path,$Name,$Value,$Type='DWord')
     try {
-        New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $Path)) {
+            New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
+        }
+        $existing = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction SilentlyContinue
+        if ($null -ne $existing) {
+            Set-ItemProperty -LiteralPath $Path -Name $Name -Value $Value -ErrorAction Stop
+        } else {
+            New-ItemProperty -LiteralPath $Path -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
+        }
         return $true
     } catch { Write-W "Registry write failed: $Path\$Name ($($_.Exception.Message))"; return $false }
 }
@@ -1910,7 +1930,7 @@ function Remove-RdpFirewallPort {
 
 function Enable-RdpHostAccess {
     param([int]$Port=3389)
-    Set-RegDword $REG_RDP fDenyTSConnections 0
+    if (-not (Set-RegDword $REG_RDP fDenyTSConnections 0)) { throw 'Failed to enable Remote Desktop in the registry' }
     $svc = Get-Service TermService -ErrorAction SilentlyContinue
     if ($svc -and $svc.StartType -eq 'Disabled') { Set-Service TermService -StartupType Manual -ErrorAction SilentlyContinue }
     if (-not (Add-RdpFirewallPort $Port)) { throw "Failed to create validated TCP/UDP firewall rules for RDP port $Port" }
@@ -1921,7 +1941,7 @@ function Enable-RdpHostAccess {
 
 function Enable-Rdp60FpsLimit {
     $winStations = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
-    Set-RegDword $winStations DWMFRAMEINTERVAL 15
+    if (-not (Set-RegDword $winStations DWMFRAMEINTERVAL 15)) { return $false }
     return (Get-RegDword $winStations DWMFRAMEINTERVAL) -eq 15
 }
 
@@ -1956,27 +1976,48 @@ function Invoke-Install {
         return
     }
     Write-I "[5/6] $(T 'install_step5')..."
-    Set-RegDword $REG_RDP_WS PortNumber 3389
+    $configuredPort = Get-RegDword $REG_RDP_WS PortNumber
+    $installPort = 0
+    if ($null -ne $configuredPort) { [void][int]::TryParse([string]$configuredPort, [ref]$installPort) }
+    if ($installPort -lt 1 -or $installPort -gt 65535) {
+        $installPort = 3389
+        Write-W 'No valid existing RDP port was found; using the Windows default port 3389'
+        if (-not (Set-RegDword $REG_RDP_WS PortNumber $installPort)) {
+            Invoke-RdpInstallRollback 'Failed to configure fallback RDP port 3389'
+            return
+        }
+    } else {
+        Write-I "Preserving the existing system RDP port: $installPort"
+    }
     $portReadback = Get-RegDword $REG_RDP_WS PortNumber
-    if ($portReadback -ne 3389) { Invoke-RdpInstallRollback 'Failed to configure the default RDP port 3389'; return }
-    try { Enable-RdpHostAccess -Port 3389 | Out-Null } catch { Invoke-RdpInstallRollback "RDP host activation failed: $_"; return }
-    Set-RegDword $REG_RDP_LIC EnableConcurrentSessions 1
-    Set-RegDword $REG_WINLOGON AllowMultipleTSSessions 1
+    if ([int]$portReadback -ne $installPort) { Invoke-RdpInstallRollback "RDP port verification failed (expected $installPort, got $portReadback)"; return }
+    try { Enable-RdpHostAccess -Port $installPort | Out-Null } catch { Invoke-RdpInstallRollback ("RDP host activation failed on port {0}: {1}" -f $installPort,$_); return }
+    Set-RegDword $REG_RDP_LIC EnableConcurrentSessions 1 | Out-Null
+    Set-RegDword $REG_WINLOGON AllowMultipleTSSessions 1 | Out-Null
     New-Item "$REG_RDP\AddIns" -Force -ErrorAction SilentlyContinue | Out-Null
     if (Enable-Rdp60FpsLimit) { Write-S 'RDP maximum frame-rate limit configured for 60 FPS (reboot required)' }
     else { Write-W 'Failed to configure the RDP 60 FPS maximum frame-rate limit' }
-    Set-RegDword "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" fDisabledAllowList 1
+    Set-RegDword "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" fDisabledAllowList 1 | Out-Null
     Get-Service -Name CertPropSvc,SessionEnv -ErrorAction SilentlyContinue | Where-Object StartType -eq Disabled | ForEach-Object { sc.exe config $_.Name start=demand 2>$null }
     Write-I "[6/6] $(T 'install_step6')..."
     Reset-RdpwrapLogForVerification | Out-Null
     Start-RdpService
 
-    $s = Get-RdpStatus
+    $s = $null
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        $s = Get-RdpStatus
+        if ($s.SupportState -eq 'Supported') { break }
+        Start-Sleep -Milliseconds 500
+    }
     Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
     if ($s.SupportState -eq 'Supported') {
         Register-RdpWatchdog -Quiet
         Write-S $(T 'install_ok' @{Port=$s.Port})
     } else {
+        $configuredDll = (Get-ItemProperty -LiteralPath $REG_TS -Name ServiceDll -ErrorAction SilentlyContinue).ServiceDll
+        $expandedDll = [Environment]::ExpandEnvironmentVariables([string]$configuredDll)
+        $processArch = if ([Environment]::Is64BitProcess) { 'x64' } else { 'x86' }
+        Write-E "Runtime diagnostic: ServiceDll=$configuredDll; expanded=$expandedDll; exists=$(Test-Path -LiteralPath $expandedDll); process=$processArch"
         $failure = "Runtime verification failed ($($s.SupportState)): $($s.HealthMessage)"
         Invoke-RdpInstallRollback $failure
         Write-E 'Installation was rolled back; multi-session RDP was not declared supported'
@@ -2096,7 +2137,7 @@ function Set-RdpPort {
         $udpConflict = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue
         if ($tcpConflict -or $udpConflict) { Write-E "Port $port is already in use"; Write-Host ""; cmd /c pause 2>&1 | Out-Null; return }
         if (-not (Add-RdpFirewallPort $port)) { Write-E "Failed to open TCP/UDP firewall rules for port $port"; Write-Host ""; cmd /c pause 2>&1 | Out-Null; return }
-        Set-RegDword $REG_RDP_WS PortNumber $port
+        Set-RegDword $REG_RDP_WS PortNumber $port | Out-Null
         $readback = Get-ItemProperty -Path $REG_RDP_WS -Name PortNumber -ErrorAction SilentlyContinue
         if (-not $readback -or $readback.PortNumber -ne $port) {
             Remove-RdpFirewallPort $port
@@ -2114,7 +2155,7 @@ function Set-RdpPort {
         }
         if (-not $listenerReady) {
             Write-W "No listener appeared on $port; rolling back to $oldPort"
-            Set-RegDword $REG_RDP_WS PortNumber $oldPort
+            Set-RegDword $REG_RDP_WS PortNumber $oldPort | Out-Null
             Add-RdpFirewallPort $oldPort | Out-Null
             Restart-RdpService
             Remove-RdpFirewallPort $port
