@@ -16,7 +16,7 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
-$script:VERSION = "2.6.2"
+$script:VERSION = "2.6.3"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $langMap = @{
@@ -1967,7 +1967,22 @@ function Invoke-Install {
     Write-I "[2/6] $(T 'install_step2')..."
     Stop-RdpService
     Write-I "[3/6] $(T 'install_step3')..."
-    try { Set-ItemProperty -Path $REG_TS -Name ServiceDll -Value "%ProgramFiles%\rdpwarp\rdpwrap.dll" -Type ExpandString -ErrorAction Stop }
+    try {
+        Set-ItemProperty -Path $REG_TS -Name ServiceDll -Value $script:RDPWRAP_DLL -Type ExpandString -ErrorAction Stop
+        $configuredServiceDll = (Get-ItemProperty -LiteralPath $REG_TS -Name ServiceDll -ErrorAction Stop).ServiceDll
+        $configuredServiceDllPath = [Environment]::ExpandEnvironmentVariables([string]$configuredServiceDll)
+        if (-not [string]::Equals(
+            [IO.Path]::GetFullPath($configuredServiceDllPath),
+            [IO.Path]::GetFullPath($script:RDPWRAP_DLL),
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+            throw "ServiceDll readback mismatch (expected $script:RDPWRAP_DLL, got $configuredServiceDll)"
+        }
+        if (-not (Test-BinaryIntegrity 'rdpwrap.dll' $configuredServiceDllPath)) {
+            throw "Configured ServiceDll failed integrity verification: $configuredServiceDllPath"
+        }
+        Write-S "ServiceDll verified: $configuredServiceDllPath"
+    }
     catch { Invoke-RdpInstallRollback "Failed to configure ServiceDll: $_"; return }
     Write-I "[4/6] $(T 'install_step4')..."
     $iniReady = Update-RdpwrapIni
@@ -2021,6 +2036,7 @@ function Invoke-Install {
         $failure = "Runtime verification failed ($($s.SupportState)): $($s.HealthMessage)"
         Invoke-RdpInstallRollback $failure
         Write-E 'Installation was rolled back; multi-session RDP was not declared supported'
+        if (-not $Install) { [void](Read-Host 'Press Enter to return to the menu') }
         return
     }
     Write-I $(T 'install_wd')
