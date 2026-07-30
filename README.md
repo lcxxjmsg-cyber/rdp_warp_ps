@@ -2,7 +2,7 @@
 
 Windows 多会话 RDP 部署与维护脚本，集成 RDP Wrapper、社区 INI、OffsetFinder、运行时健康检查、端口与防火墙管理以及自动修复看门狗。
 
-> 当前脚本版本：**2.6.2**
+> 当前脚本版本：**2.6.5**
 >
 > 本项目不承诺支持所有 Windows 构建。只有配置校验、服务启动、端口监听、RDP 协议握手和补丁日志检查全部通过后，脚本才会报告 **Supported**；否则会明确报告不支持或配置无效。
 
@@ -51,6 +51,7 @@ powershell "$env:GH_MIRROR='https://gh-proxy.com/';& ([scriptblock]::Create((irm
 - 社区没有有效配置时使用匹配当前 PowerShell 架构的 x64/x86 OffsetFinder 生成候选，校验通过后才写入
 - 对官方发布包、rdpwrap.dll 和 OffsetFinder 执行 SHA-256 完整性校验
 - 安装前保存系统状态；关键步骤失败自动回滚，卸载时恢复原始配置
+- 安装时将 TermService 隔离到独立服务宿主，确保停止/启动后重新加载 rdpwrap.dll；卸载时恢复原服务类型
 - 修改端口后验证 TCP 监听和 RDP X.224 协议握手，失败自动恢复旧端口
 - RemoteApp 连接文件生成
 - 支持 8 种语言（中文、English、日本語、한국어、Français、Deutsch、Español、Русский）

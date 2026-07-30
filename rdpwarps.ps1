@@ -16,7 +16,7 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
-$script:VERSION = "2.6.4"
+$script:VERSION = "2.6.5"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $langMap = @{
@@ -1796,7 +1796,9 @@ function Set-RegDword {
 
 function Get-RdpStateRegistrySpecs {
     return @(
-        @{Path=$REG_TS;Name='ServiceDll';Type='ExpandString'}, @{Path=$REG_RDP_WS;Name='PortNumber';Type='DWord'},
+        @{Path=$REG_TS;Name='ServiceDll';Type='ExpandString'}, @{Path=$REG_TS;Name='ServiceDllUnloadOnStop';Type='DWord'},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Services\TermService';Name='Type';Type='DWord'},
+        @{Path=$REG_RDP_WS;Name='PortNumber';Type='DWord'},
         @{Path=$REG_RDP;Name='fDenyTSConnections';Type='DWord'}, @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations';Name='DWMFRAMEINTERVAL';Type='DWord'},
         @{Path=$REG_RDP_LIC;Name='EnableConcurrentSessions';Type='DWord'}, @{Path=$REG_WINLOGON;Name='AllowMultipleTSSessions';Type='DWord'},
         @{Path=$REG_POLICY;Name='MaxInstanceCount';Type='DWord'}, @{Path=$REG_POLICY;Name='fSingleSessionPerUser';Type='DWord'},
@@ -1975,6 +1977,12 @@ function Invoke-Install {
     Stop-RdpService
     Write-I "[3/6] $(T 'install_step3')..."
     try {
+        & sc.exe config TermService type= own | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "sc.exe failed to isolate TermService (exit $LASTEXITCODE)" }
+        $serviceType = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\TermService' -Name Type -ErrorAction Stop).Type
+        if ([int]$serviceType -ne 16) { throw "TermService isolation readback failed (Type=$serviceType, expected 16)" }
+        if (-not (Set-RegDword $REG_TS ServiceDllUnloadOnStop 1)) { throw 'Failed to configure ServiceDllUnloadOnStop' }
+        Write-S 'TermService isolated in its own service host'
         Set-ItemProperty -Path $REG_TS -Name ServiceDll -Value $script:RDPWRAP_DLL -Type ExpandString -ErrorAction Stop
         $configuredServiceDll = (Get-ItemProperty -LiteralPath $REG_TS -Name ServiceDll -ErrorAction Stop).ServiceDll
         $configuredServiceDllPath = [Environment]::ExpandEnvironmentVariables([string]$configuredServiceDll)
