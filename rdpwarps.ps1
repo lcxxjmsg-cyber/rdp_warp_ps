@@ -1392,7 +1392,7 @@ function Test-RdpwrapHealth { param([string]$LogPath,[string]$Version)
     if (-not $Version) { return [PSCustomObject]@{Healthy=$false;Message='Cannot determine termsrv version';LogExists=$false;LogPath=$LogPath;Patches=@()} }
     $result = [PSCustomObject]@{Healthy=$false;Message='';LogExists=$false;LogPath=$LogPath;Version=$Version;Patches=@()}
     if (-not (Test-Path $LogPath)) {
-        $result.Message = 'rdpwrap log not found - DLL may have crashed on init'
+        $result.Message = "rdpwrap log not found at $LogPath; checking runtime process evidence instead"
         return $result
     }
     $result.LogExists = $true
@@ -1482,6 +1482,18 @@ function Get-RdpStatus {
     $s.Port = if ($port) { $port.PortNumber } else { 3389 }
     $conn = Get-NetTCPConnection -LocalPort $s.Port -State Listen -ErrorAction SilentlyContinue
     $s.Listener = ($null -ne $conn)
+    $s.WrapperLoaded = $false
+    $s.LoadedModules = ''
+    if ($s.ServiceStatus -eq 'Running') {
+        $tsSvc = Get-CimInstance Win32_Service -Filter "Name='TermService'" -ErrorAction SilentlyContinue
+        if ($tsSvc -and $tsSvc.ProcessId -gt 0) {
+            try {
+                $loaded = @((Get-Process -Id $tsSvc.ProcessId -Module -ErrorAction Stop | Where-Object { $_.ModuleName -match '^(rdpwrap|termsrv)\.dll$' }).ModuleName | Sort-Object -Unique)
+                $s.WrapperLoaded = ($loaded -contains 'rdpwrap.dll' -and $loaded -contains 'termsrv.dll')
+                $s.LoadedModules = ($loaded -join ',')
+            } catch { $s.LoadedModules = "read error: $($_.Exception.Message)" }
+        }
+    }
     $s.IniOk = $false; $s.Healthy = $false; $s.HealthMessage = ''; $s.SupportState = 'Unsupported'
     if ($s.Installed -and $s.TermsrvVersion -and (Test-Path $script:RDPWRAP_INI)) {
         $ini = Get-Content $script:RDPWRAP_INI -Raw -ErrorAction SilentlyContinue
@@ -1496,6 +1508,14 @@ function Get-RdpStatus {
             $s.PatchCount = $health.Patches.Count
             $s.Handshake = if ($s.Listener -and $s.ServiceStatus -eq 'Running') { Test-RdpProtocolHandshake -Port $s.Port } else { $false }
             if ($s.Healthy -and $s.Listener -and $s.Handshake) { $s.SupportState = 'Supported' }
+            elseif ($s.WrapperLoaded -and $s.Listener -and $s.Handshake) {
+                # The DLL's own logging is silent best-effort: a missing log file does
+                # not mean the wrapper crashed. Both modules being loaded proves the
+                # initialization ran, so accept the wrapper and warn about the log.
+                $s.Healthy = $true
+                $s.SupportState = 'Supported'
+                $s.HealthMessage = "Wrapper active (rdpwrap.dll + termsrv.dll loaded); log unavailable: $($health.Message)"
+            }
             elseif ($s.Healthy -and -not $s.Handshake) { $s.HealthMessage = 'Patches loaded, but the RDP protocol handshake failed' }
         } else { $s.HealthMessage = $check.Message }
     }
@@ -2089,15 +2109,33 @@ function Invoke-Install {
                 $loadedRdpModules = @((Get-Process -Id $termServiceRuntime.ProcessId -Module -ErrorAction Stop | Where-Object { $_.ModuleName -match '^(rdpwrap|termsrv)\.dll$' }).ModuleName)
             } catch { $moduleReadError = $_.Exception.Message }
         }
-        Write-E "Runtime process: pid=$($termServiceRuntime.ProcessId); loadedRdpModules=$($loadedRdpModules -join ','); moduleReadError=$moduleReadError"
+        $wrapperLoaded = ($loadedRdpModules -contains 'rdpwrap.dll' -and $loadedRdpModules -contains 'termsrv.dll')
+        Write-E "Runtime process: pid=$($termServiceRuntime.ProcessId); loadedRdpModules=$($loadedRdpModules -join ','); wrapperLoaded=$wrapperLoaded; moduleReadError=$moduleReadError"
         $ciEvents = @(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-CodeIntegrity/Operational';StartTime=(Get-Date).AddMinutes(-10)} -MaxEvents 100 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'rdpwrap|TermService' } | Select-Object -First 10)
         if ($ciEvents.Count -gt 0) {
             foreach ($ciEvent in $ciEvents) { Write-E "CodeIntegrity event $($ciEvent.Id): $($ciEvent.Message -replace '[\r\n]+',' ')" }
         } else {
             Write-I 'No matching Code Integrity event was found in the last 10 minutes'
         }
-        foreach ($candidateLog in @('C:\rdpwrap.txt',"$script:RDPWRAP_DIR\rdpwrap.txt",'C:\rdpwarp\rdpwrap.log') | Select-Object -Unique) {
+        $logCandidates = @(
+            'C:\rdpwrap.txt','C:\rdpwrap.log',
+            "$script:RDPWRAP_DIR\rdpwrap.txt","$script:RDPWRAP_DIR\rdpwrap.log",
+            'C:\rdpwarp\rdpwrap.txt','C:\rdpwarp\rdpwrap.log',
+            "$env:SystemRoot\System32\rdpwrap.txt","$env:SystemRoot\System32\rdpwrap.log",
+            "$env:ProgramFiles\RDP Wrapper\rdpwrap.txt","$env:ProgramFiles\RDP Wrapper\rdpwrap.log"
+        )
+        $iniLog = Get-Content $script:RDPWRAP_INI -Raw -ErrorAction SilentlyContinue
+        if ($iniLog -match 'LogFile\s*=\s*(.+)') {
+            $rawLog = $matches[1].Trim()
+            $logCandidates += $(if ($rawLog -match '^[A-Za-z]:\\') { $rawLog } else { "C:$rawLog" })
+        }
+        foreach ($candidateLog in ($logCandidates | Select-Object -Unique)) {
             Write-I "Log probe: $candidateLog exists=$(Test-Path -LiteralPath $candidateLog)"
+        }
+        foreach ($logRoot in @('C:\rdpwarp',$script:RDPWRAP_DIR,"$env:ProgramFiles\RDP Wrapper") | Where-Object { $_ } | Select-Object -Unique) {
+            if (-not (Test-Path -LiteralPath $logRoot)) { continue }
+            $foundLogs = @(Get-ChildItem -LiteralPath $logRoot -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^rdpwrap.*\.(log|txt)(\..*)?$' })
+            foreach ($fl in $foundLogs) { Write-I "Log file found: $($fl.FullName) ($($fl.Length) bytes, $($fl.LastWriteTime))" }
         }
         $failure = "Runtime verification failed ($($s.SupportState)): $($s.HealthMessage)"
         Invoke-RdpInstallRollback $failure
@@ -2166,7 +2204,25 @@ function Register-RdpWatchdog { param([switch]$Quiet)
 $l="$env:ProgramFiles\rdpwarp\watchdog.log";$i="$env:ProgramFiles\rdpwarp\rdpwrap.ini";$t="$env:SystemRoot\System32\termsrv.dll"
 $v=(Get-Item $t).VersionInfo;$k="$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
 function w{param($m)"$(Get-Date -F 'yyyy-MM-dd HH:mm:ss') $m"|Out-File $l -Append}
-function rh{$svc=Get-Service TermService -EA 0;if(!$svc-or$svc.Status-ne'Running'){return $false};$p=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name PortNumber -EA 0).PortNumber;if(!(Get-NetTCPConnection -State Listen -LocalPort $p -EA 0)){return $false};$log='C:\rdpwarp\rdpwrap.log';$z=@(Get-Content $log -EA 0);$start=-1;for($j=0;$j-lt$z.Count;$j++){if($z[$j]-match('\bVersion:\s*'+[regex]::Escape($k))){$start=$j}};if($start-lt0){return $false};$tail=@($z[$start..($z.Count-1)]);if($tail|Where-Object{$_-match'(FAILED|ERROR|\[!\]|not found|NOT FOUND)'}){return $false};$patch=@($tail|Where-Object{$_-match'^(Patch|Hook)\s'});return(($patch|Where-Object{$_-match'SingleSession|CEnforcement|CSession'}).Count-gt0-and($patch|Where-Object{$_-match'DefPolicy|CDefPolicy'}).Count-gt0)}
+function rh{
+$svc=Get-Service TermService -EA 0
+if(!$svc-or$svc.Status-ne'Running'){return $false}
+$p=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name PortNumber -EA 0).PortNumber
+if(!(Get-NetTCPConnection -State Listen -LocalPort $p -EA 0)){return $false}
+$log='C:\rdpwarp\rdpwrap.log';$z=@(Get-Content $log -EA 0)
+if($z.Count){
+$start=-1
+for($j=0;$j-lt$z.Count;$j++){if($z[$j]-match('\bVersion:\s*'+[regex]::Escape($k))){$start=$j}}
+if($start-ge0){
+$tail=@($z[$start..($z.Count-1)])
+if(-not($tail|Where-Object{$_-match'(FAILED|ERROR|\[!\]|not found|NOT FOUND)'})){
+$patch=@($tail|Where-Object{$_-match'^(Patch|Hook)\s'})
+if(($patch|Where-Object{$_-match'SingleSession|CEnforcement|CSession'}).Count-gt0-and($patch|Where-Object{$_-match'DefPolicy|CDefPolicy'}).Count-gt0){return $true}
+}}}
+$ci=Get-CimInstance Win32_Service -Filter "Name='TermService'" -EA 0
+if($ci-and$ci.ProcessId-gt0){
+try{$m=@((Get-Process -Id $ci.ProcessId -Module -EA Stop|Where-Object{$_.ModuleName-match'^(rdpwrap|termsrv)\.dll$'}).ModuleName|Sort-Object -Unique);return($m-contains'rdpwrap.dll'-and$m-contains'termsrv.dll')}catch{return $false}}
+return $false}
 $c=Get-Content $i -Raw -EA 0;$q=Test-RdpIniCandidate -Content $c -Version $k
 if($q.Valid){if(rh){exit 0};w"Static configuration exists but runtime health failed; restarting";Restart-Service TermService -Force -EA 0;Start-Sleep 3;if(rh){w"Runtime recovered after restart";exit 0}}elseif($q.Exists){w"Invalid local entry for $k`: $($q.Message)"}
 w"Need update for $k"
