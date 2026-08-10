@@ -1905,7 +1905,11 @@ function Test-RdpTcpRegistryHealth {
         if ($port -lt 1 -or $port -gt 65535) { $result.Missing += 'PortNumber' } else { $result.Port = $port }
         if ($null -eq $properties.fEnableWinStation) { $result.Missing += 'fEnableWinStation' }
         if ([string]::IsNullOrWhiteSpace([string]$properties.WdName)) { $result.Missing += 'WdName' }
-        if ([string]::IsNullOrWhiteSpace([string]$properties.WinStationName)) { $result.Missing += 'WinStationName' }
+        # NOTE: WinStationName must NOT be required here. Windows does not create
+        # it under ...\WinStations\RDP-Tcp by default (fresh Win10/11 keys lack
+        # it), so requiring it blocks clean installations. A listener key stripped
+        # by an old uninstall is still caught by the key, PortNumber,
+        # fEnableWinStation and WdName checks above.
         if ($result.Missing.Count -gt 0) { $result.Healthy = $false }
     }
     $result.Message = if ($result.Healthy) {
