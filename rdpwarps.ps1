@@ -1141,7 +1141,7 @@ $script:RDPWRAP_DLL = "$script:RDPWRAP_DIR\rdpwrap.dll"
 $script:RDPWRAP_INI = "$script:RDPWRAP_DIR\rdpwrap.ini"
 $script:TEMPLATE_INI = "$script:RDPWRAP_DIR\rdpwrap_templete.ini"
 $script:WATCHDOG_TASK = "rdpwarp-Watchdog"
-$script:WATCHDOG_SCRIPT = "$env:SystemRoot\Temp\rdpwarp-Watchdog.ps1"
+$script:WATCHDOG_SCRIPT = "$script:RDPWRAP_DIR\watchdog.ps1"
 $script:WINST_EXE = "$script:RDPWRAP_DIR\RDPWInst.exe"
 $script:STATE_FILE = "$env:ProgramData\rdpwarp\install-state.json"
 
@@ -1718,7 +1718,12 @@ function Update-RdpwrapIni {
             Write-S "INI configuration for $ver passed runtime verification"
             return $true
         }
-        Write-W "INI is structurally complete but runtime verification failed: $($health.Message)"
+        $status = Get-RdpStatus
+        if ($status.SupportState -eq 'Supported') {
+            Write-S "INI configuration for $ver passed runtime verification (process evidence; log unavailable)"
+            return $true
+        }
+        Write-W "INI is structurally complete but runtime verification failed: $($status.HealthMessage)"
         Write-I 'Continuing with community refresh and OffsetFinder fallback...'
     }
     if ($current.Exists) { Write-W $current.Message }
@@ -2201,7 +2206,7 @@ function Register-RdpWatchdog { param([switch]$Quiet)
         "function Test-RdpIniCandidate { $(${function:Test-RdpIniCandidate}) }"
     ) -join "`r`n`r`n"
     $scriptBody = $validatorFunctions + "`r`n`r`n" + @'
-$l="$env:ProgramFiles\rdpwarp\watchdog.log";$i="$env:ProgramFiles\rdpwarp\rdpwrap.ini";$t="$env:SystemRoot\System32\termsrv.dll"
+='C:\rdpwarp\watchdog.log';$i="$env:ProgramFiles\rdpwarp\rdpwrap.ini";$t="$env:SystemRoot\System32\termsrv.dll"
 $v=(Get-Item $t).VersionInfo;$k="$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
 function w{param($m)"$(Get-Date -F 'yyyy-MM-dd HH:mm:ss') $m"|Out-File $l -Append}
 function rh{
@@ -2875,7 +2880,27 @@ function Invoke-InteractiveMenu {
             }
         } else {
             switch ($choice) {
-                "1" { Clear-Host; Update-RdpwrapIni; Write-Host ""; cmd /c pause 2>&1 | Out-Null }
+                "1" {
+                    Clear-Host
+                    $before = Get-RdpStatus
+                    $updated = Update-RdpwrapIni
+                    if ($updated) {
+                        if ($before.SupportState -ne 'Supported') {
+                            Write-W 'Note: restarting TermService will briefly disconnect active RDP sessions'
+                            Write-I 'Restarting TermService so the updated offsets take effect...'
+                            Restart-RdpService
+                        }
+                        $final = Get-RdpStatus
+                        if ($final.SupportState -eq 'Supported') {
+                            Write-S "RDP support OK for termsrv $(Get-TermsrvVersion) (port $($final.Port))"
+                        } else {
+                            Write-W "Configuration updated but runtime verification still failing: $($final.HealthMessage)"
+                        }
+                    } else {
+                        Write-E 'No valid configuration found for the current termsrv.dll; check network access or try later'
+                    }
+                    Write-Host ""; cmd /c pause 2>&1 | Out-Null
+                }
                 "2" { Set-RdpSessions }
                 "3" { Set-RdpSecurity }
                 "4" { Set-RdpShadowing }
