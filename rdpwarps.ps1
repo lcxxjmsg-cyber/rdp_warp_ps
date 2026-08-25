@@ -18,12 +18,27 @@ if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
 # ===== 自动提权（UAC）=====
 # 首次运行时自动申请管理员权限并重启自身；UAC 被取消时提示手动提权。
+# 本地文件运行：直接重启自身脚本文件。
+# 远程 `irm | iex`（无本地文件路径）：把当前源码写入临时文件，再提权运行，跑完自动清理。
 $script:IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $script:IsAdmin -and -not $env:RDPWARP_NO_ELEVATE) {
-    $elevPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
-    if ($elevPath) {
+    $elevTarget = $null
+    $elevTemp = $null
+    if ($PSCommandPath) { $elevTarget = $PSCommandPath }
+    elseif ($MyInvocation.MyCommand.Path) { $elevTarget = $MyInvocation.MyCommand.Path }
+    else {
         try {
-            $elevArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$elevPath`"")
+            $src = $MyInvocation.MyCommand.ScriptBlock.ToString()
+            if ($src -and $src.Length -gt 10) {
+                $elevTemp = Join-Path $env:TEMP ("rdpwarp-elev-" + [guid]::NewGuid().ToString('N') + '.ps1')
+                [IO.File]::WriteAllText($elevTemp, $src, (New-Object System.Text.UTF8Encoding($true)))
+                $elevTarget = $elevTemp
+            }
+        } catch { $elevTemp = $null }
+    }
+    if ($elevTarget) {
+        try {
+            $elevArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$elevTarget`"")
             if ($Install) { $elevArgs += '-Install' }
             if ($Uninstall) { $elevArgs += '-Uninstall' }
             if ($Help) { $elevArgs += '-Help' }
@@ -31,8 +46,10 @@ if (-not $script:IsAdmin -and -not $env:RDPWARP_NO_ELEVATE) {
             if ($ExperimentalNoSym) { $elevArgs += '-ExperimentalNoSym' }
             $elevProc = Start-Process powershell -Verb RunAs -ArgumentList $elevArgs -PassThru -ErrorAction Stop
             $elevProc.WaitForExit()
+            if ($elevTemp -and (Test-Path $elevTemp)) { Remove-Item $elevTemp -Force -ErrorAction SilentlyContinue }
             exit $elevProc.ExitCode
         } catch {
+            if ($elevTemp -and (Test-Path $elevTemp)) { Remove-Item $elevTemp -Force -ErrorAction SilentlyContinue }
             Write-Host '需要管理员权限（UAC 被取消或不可用）——请右键"以管理员身份运行"，或使用 start.bat。'
             exit 1
         }
