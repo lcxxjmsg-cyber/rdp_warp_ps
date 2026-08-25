@@ -29,39 +29,28 @@ Windows 的「远程桌面」默认一次只允许一个用户登录。这个工
 
 ## 快速开始
 
-### 方法一：本地运行（最推荐）
-
-1. **方式 a**：双击 **`start.bat`**。
-2. **方式 b**：打开 PowerShell，进入脚本所在文件夹，运行：
-
-```powershell
-.\rdpwarps.ps1
-```
-
-> - 脚本会自动弹出 **UAC 提权**。若被取消，请右键「以管理员身份运行」。
-> - 进入菜单选 **1** = 一键安装；选 **0** = 卸载。
-
-### 方法二：远程执行（不下载，先体验）
+先试试最简单的**远程运行**（无需下载任何文件）：
 
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
 ```
 
-> 国内网络可加代理前缀：`$env:GH_MIRROR='https://gh-proxy.com/';`
-> ⚠ 这种运行方式**无法自动提权**；需要管理员权限请用「方法一」。选 **1** 一键安装。
-
-### 方法三：静默安装 / 卸载
-
-```powershell
-.\rdpwarps.ps1 -Install      # 静默一键安装
-.\rdpwarps.ps1 -Uninstall    # 干净卸载
-```
+> - 国内网络可加代理前缀：`$env:GH_MIRROR='https://gh-proxy.com/';`
+> - ⚠ 这种方式**无法自动提权**；需要管理员权限、或想长期/离线使用，请按下一节从 **Release** 下载后本地运行。
+> - 运行后选 **1** = 一键安装。
 
 ## 从 Release 下载使用
 
-直接下载打包好的版本最省事（内含 `rdpwarps.ps1`、`start.bat`、`bin/`、`README.md`，解压即用）：
+想把工具留在本地、离线或长期使用？前往 **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)** 下载最新的 `rdp_warp_ps-vX.Y.Z.zip`，解压后：
 
-> 前往 **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)**，下载最新的 `rdp_warp_ps-vX.Y.Z.zip`，**解压后双击 `start.bat`** 即可。
+- **启动主菜单**：双击 **`start.bat`**（会自动提权）；
+- **或用 PowerShell**：`.\rdpwarps.ps1`（会自动提权）；
+- **静默安装**：`.\rdpwarps.ps1 -Install`；
+- **静默卸载**：`.\rdpwarps.ps1 -Uninstall`。
+
+> - 脚本会自动弹出 **UAC 提权**；若被取消，请右键「以管理员身份运行」或双击 `start.bat`。
+> - 本地运行会优先使用 `bin/` 目录中的文件，无需联网下载。
+> - 进入菜单选 **1** 一键安装、选 **0** 卸载。
 
 ## 命令行参数
 
