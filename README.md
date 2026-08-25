@@ -29,27 +29,19 @@ Windows 的「远程桌面」默认一次只允许一个用户登录。这个工
 
 ## 快速开始
 
-### 方式一（推荐）：一行远程运行，自动提权 + 镜像加速
-
-用 **[GitHub Script Entrance](https://github.com/lcxxjmsg-cyber/GitHub-Script-Entrance)** 启动器，一次搞定「免下载、自动 UAC 提权、走镜像下载、临时文件自动清理」：
-
-```powershell
-powershell "& ([scriptblock]::Create((irm 'https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
-```
-
-> 会弹 **UAC**，点「是」。国内网络自动走镜像。更多用法（带参数、本地路径、落地运行）见上面的链接。
-
-### 方式二：直接远程执行（最小用法）
+**方式一：能直连**
 
 ```powershell
 powershell -c "(irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
 ```
 
-> - 脚本开头带 **UTF-8 BOM**，直接 `irm ... | iex` 会因 BOM 顶坏注释块而报错（`<` 运算符保留 / RedirectionNotSupported），所以用 `.TrimStart([char]0xFEFF)` 去掉 BOM。
-> - 脚本内已内置自提权：本地文件运行会直接提权；`irm | iex` 运行则把源码写入临时文件后提权，跑完自动删除。
-> - 国内直连 `raw.githubusercontent.com` 常被卡、时通时断；卡住就换**方式一**，或加镜像前缀：
->   `powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"`
-> - 运行后选 **1** = 一键安装。想长期/离线用，请按下一节从 **Release** 下载。
+**方式二：走代理（国内推荐）**
+
+```powershell
+powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
+```
+
+出现 UAC 提示点「是」，运行后选 **1** 一键安装。想长期/离线用，请看下一节从 **Release** 下载。
 
 ## 从 Release 下载使用
 
