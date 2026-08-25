@@ -1139,7 +1139,7 @@ $script:GH_MIRROR = if ($env:GH_MIRROR) { $env:GH_MIRROR.TrimEnd('/') + '/' } el
 $script:RDPWRAP_DIR = "$env:ProgramFiles\rdpwarp"
 $script:RDPWRAP_DLL = "$script:RDPWRAP_DIR\rdpwrap.dll"
 $script:RDPWRAP_INI = "$script:RDPWRAP_DIR\rdpwrap.ini"
-$script:TEMPLATE_INI = "$script:RDPWRAP_DIR\rdpwrap_templete.ini"
+$script:TEMPLATE_INI = "$script:RDPWRAP_DIR\rdpwrap_template.ini"
 $script:WATCHDOG_TASK = "rdpwarp-Watchdog"
 $script:WATCHDOG_SCRIPT = "$script:RDPWRAP_DIR\watchdog.ps1"
 $script:WINST_EXE = "$script:RDPWRAP_DIR\RDPWInst.exe"
@@ -2270,15 +2270,20 @@ function Show-ConfigMenu { param($Title,$Items)
     Write-Host "+----------------------------------------------------+" -ForegroundColor Cyan
     $idx = 0
     foreach ($item in $Items) {
-        $idx++
         if ($item -is [string]) {
             if ($item -eq '-') { Write-Host "|  $(''.PadRight(48))|" -ForegroundColor DarkGray }
             else { Write-Host "|  $item" -ForegroundColor DarkGray }
         } else {
-            $val = if ($null -ne $item.Value) { "[$($item.Value)]" } else { "" }
-            $color = if ($item.Color) { $item.Color } else { 'White' }
-            Write-Host "|  " -NoNewline; Write-Host "$idx." -NoNewline -ForegroundColor Yellow
-            Write-Host " $($item.Label.PadRight(20)) $val" -ForegroundColor $color
+            if ($null -ne $item.Value) {
+                $val = "[$($item.Value)]"
+                $color = if ($item.Color) { $item.Color } else { 'DarkGray' }
+                Write-Host ("|  " + $item.Label.PadRight(22) + "  " + $val) -ForegroundColor $color
+            } else {
+                $idx++
+                $color = if ($item.Color) { $item.Color } else { 'White' }
+                Write-Host "|  " -NoNewline; Write-Host "$idx." -NoNewline -ForegroundColor Yellow
+                Write-Host " $($item.Label)" -ForegroundColor $color
+            }
         }
     }
     Write-Host "|                                                    |" -ForegroundColor DarkGray
@@ -2343,9 +2348,9 @@ function Set-RdpSessions {
             @{Label=(T 'menu_session_s');Value=if($null -ne $s){$s}else{(T 'unlimited')}}
             @{Label=(T 'menu_session_u');Value=if($sspu -eq 1){T 'on'}elseif($sspu -eq 0){T 'off'}else{T 'dflt'}}
             "-"
-            @{Label="1. $(T 'menu_session_m')"}
-            @{Label="2. $(T 'menu_session_t')"}
-            @{Label="3. $(T 'menu_session_r')"}
+            @{Label=(T 'menu_session_m')}
+            @{Label=(T 'menu_session_t')}
+            @{Label=(T 'menu_session_r')}
         )
         $c = Read-Host "> "
         switch ($c) {
@@ -2368,8 +2373,8 @@ function Set-RdpSecurity {
             @{Label=(T 'menu_security_nla');Value=$nlaStr}
             @{Label=(T 'menu_security_sl');Value=$slStr}
             "-"
-            @{Label="1. $(T 'menu_security_tn')"}
-            @{Label="2. $(T 'menu_security_ss')"}
+            @{Label=(T 'menu_security_tn')}
+            @{Label=(T 'menu_security_ss')}
         )
         $c = Read-Host "> "
         switch ($c) {
@@ -2516,12 +2521,27 @@ function Get-ShadowGlobal {
 function Set-ShadowGlobal {
     param([int]$Value,[switch]$Clear)
     $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+    # RDP-Tcp 与 Console 各自可能带 fInheritShadow=1（继承父级值，会忽略自身 Shadow）。
+    # 因此这里同时写两处 Shadow 并置 fInheritShadow=0，再重启 TermService，确保按所选值生效。
+    $winstations = @($REG_POLICY_LOCAL, 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\Console')
     if ($Clear) {
         Remove-ItemProperty -LiteralPath $policy -Name 'Shadow' -ErrorAction SilentlyContinue
-        return ($null -eq (Get-RegDword $policy 'Shadow'))
+        foreach ($w in $winstations) {
+            Remove-ItemProperty -LiteralPath $w -Name 'Shadow' -ErrorAction SilentlyContinue
+            Remove-ItemProperty -LiteralPath $w -Name 'fInheritShadow' -ErrorAction SilentlyContinue
+        }
+        $ok = ($null -eq (Get-RegDword $policy 'Shadow')) -and ($null -eq (Get-RegDword $REG_POLICY_LOCAL 'Shadow'))
+    } else {
+        if (-not (Set-RegDword $policy 'Shadow' $Value)) { return $false }
+        foreach ($w in $winstations) {
+            Set-RegDword $w 'Shadow' $Value | Out-Null
+            Set-RegDword $w 'fInheritShadow' 0 | Out-Null
+        }
+        if ((Get-RegDword $policy 'Shadow') -ne $Value) { return $false }
+        $ok = ((Get-RegDword $REG_POLICY_LOCAL 'Shadow') -eq $Value -and (Get-RegDword $REG_POLICY_LOCAL 'fInheritShadow') -eq 0)
     }
-    if (-not (Set-RegDword $policy 'Shadow' $Value)) { return $false }
-    return ((Get-RegDword $policy 'Shadow') -eq $Value)
+    Restart-RdpService
+    return $ok
 }
 
 function Set-ShadowGlobalMenu {
@@ -2534,19 +2554,19 @@ function Set-ShadowGlobalMenu {
             @{Label=(S 'eff');Value=(Format-ShadowValue -Value $g.Effective -Map $sv -NotConfigured $su.notcfg)}
             @{Label=(S 'legacy');Value=(Format-ShadowValue -Value $g.Legacy -Map $sv -NotConfigured $su.notcfg)}
             "-"
-            @{Label="1. $(T 'menu_shadow_off')"}
-            @{Label="2. $(T 'menu_shadow_fwp')"}
-            @{Label="3. $(T 'menu_shadow_fwo')"}
-            @{Label="4. $(T 'menu_shadow_vwp')"}
-            @{Label="5. $(T 'menu_shadow_vwo')"}
-            @{Label="6. $(S 'clear_global')"}
-            @{Label="7. $(S 'clear_legacy')"}
+            @{Label=(T 'menu_shadow_off')}
+            @{Label=(T 'menu_shadow_fwp')}
+            @{Label=(T 'menu_shadow_fwo')}
+            @{Label=(T 'menu_shadow_vwp')}
+            @{Label=(T 'menu_shadow_vwo')}
+            @{Label=(S 'clear_global')}
+            @{Label=(S 'clear_legacy')}
         )
         $c = Read-Host "> "
         switch -Regex ($c) {
             '^[1-5]$' { if (Set-ShadowGlobal -Value ([int]$c - 1)) { Write-S (S 'apply' @((S 'global'), $sv[([int]$c - 1)])); Write-I $su.apply_note } else { Write-E (S 'err_write' @((S 'global'))) } }
             '^6$' { if (Set-ShadowGlobal -Clear) { Write-S $su.gclear } else { Write-E (S 'err_write' @((S 'global'))) } }
-            '^7$' { Remove-ItemProperty -LiteralPath $REG_POLICY_LOCAL -Name 'Shadow' -ErrorAction SilentlyContinue; Write-S $su.legcleared }
+            '^7$' { Remove-ItemProperty -LiteralPath $REG_POLICY_LOCAL -Name 'Shadow' -ErrorAction SilentlyContinue; Restart-RdpService; Write-S $su.legcleared }
             '^0$' { }
             default { Write-W (T 'inv_opt'); Start-Sleep -Milliseconds 800 }
         }
@@ -2584,12 +2604,12 @@ function Set-ShadowUserMenu {
         Show-ConfigMenu "$(S 'user'): $($target.Name)" @(
             @{Label=(S 'cur');Value=(Format-ShadowValue -Value $cur -Map $sv -NotConfigured $su.notcfg)}
             "-"
-            @{Label="1. $(T 'menu_shadow_off')"}
-            @{Label="2. $(T 'menu_shadow_fwp')"}
-            @{Label="3. $(T 'menu_shadow_fwo')"}
-            @{Label="4. $(T 'menu_shadow_vwp')"}
-            @{Label="5. $(T 'menu_shadow_vwo')"}
-            @{Label="6. $(S 'clear_global')"}
+            @{Label=(T 'menu_shadow_off')}
+            @{Label=(T 'menu_shadow_fwp')}
+            @{Label=(T 'menu_shadow_fwo')}
+            @{Label=(T 'menu_shadow_vwp')}
+            @{Label=(T 'menu_shadow_vwo')}
+            @{Label=(S 'clear_global')}
         )
         $c = Read-Host "> "
         switch -Regex ($c) {
@@ -2655,9 +2675,9 @@ function Set-RdpDisplay {
             @{Label=(T 'menu_display_hide');Value=if($hide -eq 1){T 'on'}else{T 'off'}}
             @{Label=(T 'menu_display_ar');Value=if((Get-RegDword $REG_POLICY "fDisableAutoReconnect")-eq1){T 'off'}else{T 'dflt'}}
             "-"
-            @{Label="1. $(T 'menu_display_tm')"}
-            @{Label="2. $(T 'menu_display_th')"}
-            @{Label="3. $(T 'menu_display_ta')"}
+            @{Label=(T 'menu_display_tm')}
+            @{Label=(T 'menu_display_th')}
+            @{Label=(T 'menu_display_ta')}
         )
         $c = Read-Host "> "
         switch ($c) {
@@ -2683,10 +2703,10 @@ function Set-RdpTimeouts {
             @{Label=(T 'menu_timeout_idle');Value=$idleStr}
             @{Label=(T 'menu_timeout_active');Value=$sessStr}
             "-"
-            @{Label="1. $(T 'menu_timeout_sd')"}
-            @{Label="2. $(T 'menu_timeout_si')"}
-            @{Label="3. $(T 'menu_timeout_sa')"}
-            @{Label="4. $(T 'menu_timeout_reset')"}
+            @{Label=(T 'menu_timeout_sd')}
+            @{Label=(T 'menu_timeout_si')}
+            @{Label=(T 'menu_timeout_sa')}
+            @{Label=(T 'menu_timeout_reset')}
         )
         $c = Read-Host "> "
         $matched = $false
