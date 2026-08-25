@@ -1,107 +1,78 @@
-# rdpwarp — Windows 多会话远程桌面一键工具
+🌐 **Language**: [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md)
 
-> 一句话：让一台 Windows 电脑**同时支持多个用户远程桌面登录**。小白也能用。
+# rdpwarp — Multi-session Remote Desktop for Windows
 
-## 目录
+> Let one Windows PC allow **multiple users to log in remotely at the same time**. Easy to use.
 
-- [这是什么？](#这是什么)
-- [它能做什么？](#它能做什么)
-- [快速开始](#快速开始)
-- [从 Release 下载使用](#从-release-下载使用)
-- [命令行参数](#命令行参数)
-- [常见问题](#常见问题)
-- [卸载](#卸载)
-- [系统要求](#系统要求)
-- [进阶 / 技术说明](#进阶--技术说明)
-- [致谢与免责声明](#致谢与免责声明)
+## Contents
 
-## 这是什么？
+- [What is it?](#what-is-it)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Download from Release](#download-from-release)
+- [FAQ](#faq)
+- [Uninstall](#uninstall)
+- [Requirements](#requirements)
+- [License](#license)
 
-Windows 的「远程桌面」默认一次只允许一个用户登录。这个工具借助 **RDP Wrapper（rdpwrap）** 解锁系统限制，让同一台电脑可以多人同时远程登录、各自使用。
+## What is it?
 
-## 它能做什么？
+Windows Remote Desktop normally allows only one session at a time. This tool uses **RDP Wrapper (rdpwrap)** to unlock that limit, so several users can connect to and use the same PC at once.
 
-- 一键安装 / 卸载，开启多会话远程桌面
-- 设置最大会话数、每用户单会话、安全级别（NLA / 安全层）、显示、超时、端口等
-- 自动匹配当前系统版本，Windows 更新后自动修复偏移
-- 看门狗自愈（开机自启 + 每日检查）
-- 支持 8 种语言
+## Features
 
-## 快速开始
+- One-click install / uninstall, enable multi-session Remote Desktop
+- Configure max sessions, single-session-per-user, security (NLA / security layer), display, timeouts and port
+- Automatically detects your Windows build and repairs offsets after updates
+- Self-healing watchdog (starts at boot, checks daily)
+- 8 languages
 
-**方式一：能直连**
+## Quick start
+
+**Method 1: direct connection**
 
 ```powershell
 powershell -c "(irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
 ```
 
-**方式二：走代理（国内推荐）**
+**Method 2: use a proxy (recommended in China)**
 
 ```powershell
 powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
 ```
 
-出现 UAC 提示点「是」，运行后选 **1** 一键安装。想长期/离线用，请看下一节从 **Release** 下载。
+When the **UAC** prompt appears, click **Yes**, then choose **1** to install. For long-term or offline use, download below.
 
-## 从 Release 下载使用
+## Download from Release
 
-想把工具留在本地、离线或长期使用？前往 **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)** 下载最新的 `rdp_warp_ps-vX.Y.Z.zip`，解压后：
+Go to **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)**, download `rdp_warp_ps-vX.Y.Z.zip`, extract it, then double-click **`start.bat`** (auto-elevates). Or run:
 
-- **启动主菜单**：双击 **`start.bat`**（会自动提权）；
-- **或用 PowerShell**：`.\rdpwarps.ps1`（会自动提权）；
-- **静默安装**：`.\rdpwarps.ps1 -Install`；
-- **静默卸载**：`.\rdpwarps.ps1 -Uninstall`。
+```powershell
+.\rdpwarps.ps1 -Install    # silent install
+.\rdpwarps.ps1 -Uninstall  # clean uninstall
+```
 
-> - 脚本会自动弹出 **UAC 提权**；若被取消，请右键「以管理员身份运行」或双击 `start.bat`。
-> - 本地运行会优先使用 `bin/` 目录中的文件，无需联网下载。
-> - 进入菜单选 **1** 一键安装、选 **0** 卸载。
+## FAQ
 
-## 命令行参数
+**Q1: TermService stays stopped after install?**
+Most likely **Smart App Control / Memory Integrity** (code-integrity) is blocking the unsigned rdpwrap. Turn off "Smart App Control" and "Memory Integrity", **reboot**, and add `C:\Program Files\rdpwarp` and `C:\rdpwarp` to Defender exclusions.
 
-| 参数 | 作用 |
-|---|---|
-| `-Install` | 静默一键安装 |
-| `-Uninstall` | 干净卸载 |
-| `-Help` | 查看帮助 |
-| `-GHMirror <url>` | 指定 GitHub 代理镜像 |
-| `-ExperimentalNoSym` | 启用无符号模式扫描（测试用，默认关闭） |
+**Q2: Can I shadow another user's session?**
+Client editions only allow shadowing **your own** sessions. Cross-user shadowing needs **Windows Server + RDS** (admin + the "Set rules for remote control" policy + reboot).
 
-## 常见问题
+**Q3: "Admin required"?**
+The script self-elevates automatically. If UAC is denied, right-click "Run as administrator" or use `start.bat`.
 
-**Q1：装完提示 TermService 停了？**
-多半是系统「智能应用控制 / 内存完整性 / 代码完整性」拦了未签名的 rdpwrap（日志有 `did not meet the Enterprise signing level requirements`）。
-→ 关闭「智能应用控制」和「内存完整性」，**重启**；并把 `C:\Program Files\rdpwarp`、`C:\rdpwarp` 加入 Defender 排除项。
+## Uninstall
 
-**Q2：能多人同时登录了，但要影子别人的会话会提示拒绝访问？**
-客户端版只支持影子「自己」的会话；跨用户影子需要 **Windows Server + RDS**，且要管理员 + 启用组策略「设置远程控制的规则」+ 重启。
+Run `.\rdpwarps.ps1 -Uninstall` — it restores settings, removes deployed files, the watchdog and Defender exclusions.
 
-**Q3：提示需要管理员权限？**
-脚本会自动提权；若被 UAC 取消，请右键「以管理员身份运行」或直接双击 `start.bat`。
+## Requirements
 
-**Q4：我的 Windows 版本支持吗？**
-只有配置、服务、监听、协议握手全部通过，脚本才报 **Supported**；否则明确报 **Unsupported / InvalidConfig**，未知版本不会假装支持。
+- Windows 8.1 / 10 / 11, Windows Server 2008~2025
+- PowerShell 5.1, administrator privileges
+- Real support depends on your `termsrv.dll` version passing strict validation
 
-## 卸载
+## License
 
-运行 `.\rdpwarps.ps1 -Uninstall`，脚本会恢复安装前的系统设置、删除已部署文件、移除看门狗与 Defender 排除项。
-
-## 系统要求
-
-- Windows 8.1 / 10 / 11，Windows Server 2008 ~ 2025
-- PowerShell 5.1、管理员权限
-- 实际支持取决于当前 `termsrv.dll` 版本能否通过严格校验
-
-## 进阶 / 技术说明
-
-> 以下供维护者与进阶用户参考，普通用户无需关心。
-
-- **配置查找顺序**：本地 INI → 三个社区 INI（asmtron / sebaxakerhtc / affinityv）→ OffsetFinder 自动生成。
-- **安全性**：安装前保存系统状态，关键步骤失败自动回滚；卸载恢复原配置并对二进制/INI 做 SHA-256 校验。
-- **看门狗**：开机自启 + 每日 03:00，自动更新偏移并自愈。
-- **影子 / 远程控制**：客户端版仅同用户会话可用；跨用户需 Server + RDS。
-
-## 致谢与免责声明
-
-借鉴并感谢 [stascorp/rdpwrap](https://github.com/stascorp/rdpwrap)、[llccd/RDPWrapOffsetFinder](https://github.com/llccd/RDPWrapOffsetFinder) 及 asmtron / sebaxakerhtc / affinityv 等社区项目。
-
-请仅在你拥有或获准管理的设备上使用，并自行确认 Microsoft 授权条款及当地法规。本项目与 Microsoft 及所引用的社区项目无隶属关系。
+For use only on devices you own or are allowed to manage. Builds on community projects such as [stascorp/rdpwrap](https://github.com/stascorp/rdpwrap) and RDPWrapOffsetFinder.
