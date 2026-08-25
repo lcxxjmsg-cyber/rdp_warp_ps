@@ -8,30 +8,24 @@ Windows 多会话 RDP 部署与维护脚本，集成 RDP Wrapper、社区 INI、
 
 ## 一键启动
 
-### 方式一：CMD / 管理员 PowerShell（推荐）
+### 方式一：本地启动（推荐）
+
+- **双击 `start.bat`**（最简单）；或在 PowerShell 中运行：
+
+```powershell
+.\rdpwarps.ps1
+```
+
+脚本会自动弹出 **UAC 提权**；若提权被取消，请右键「以管理员身份运行」。进入菜单后选 **1** 即可一键安装。
+
+### 方式二：远程执行（免下载，直接运行最新版）
 
 ```powershell
 powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
 ```
 
-> 能直连 GitHub 则更短：
-> ```powershell
-> powershell -c "irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
-> ```
-
-### 方式二：Win+R 运行
-
-Win+R 输入 `powershell`，按 `Ctrl+Shift+Enter`（以管理员身份运行），在弹出的蓝色窗口中粘贴方式一的命令。
-
-### 方式三：自动提权（完整版）
-
-从普通命令行启动，自动弹出 UAC 提权：
-
-```powershell
-powershell "$env:GH_MIRROR='https://gh-proxy.com/';& ([scriptblock]::Create((irm 'https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
-```
-
-进入菜单后选 **1** 即可一键安装。
+> 能直连 GitHub 时可去掉 `GH_MIRROR` 前缀。
+> **注意**：`irm | iex` 是在内存里运行，**无法自动弹 UAC 提权**。若要管理员权限，请先克隆到本地再运行，或右键「以管理员身份运行」的 PowerShell 里执行。
 
 ## 功能
 
@@ -62,10 +56,19 @@ powershell "$env:GH_MIRROR='https://gh-proxy.com/';& ([scriptblock]::Create((irm
 ```powershell
 git clone https://github.com/lcxxjmsg-cyber/rdp_warp_ps.git
 cd rdp_warp_ps
-.\rdpwarps.ps1
+.\rdpwarps.ps1        # 会自动提权；或双击 start.bat
 ```
 
-本地运行时 `bin/` 目录中的文件被优先使用，无需联网下载。
+本地运行时会优先使用 `bin/` 目录中的文件，无需联网下载。
+
+### ⚠ 需要留意的系统拦截
+
+- **智能应用控制 / 内存完整性（代码完整性拦截）**：若系统开启了 **Smart App Control（强制模式）** 或 **内核隔离-内存完整性**，未签名的 `rdpwrap.dll` / `TermWrap.dll` 会被代码完整性策略拦截，导致 TermService 无法加载、停在 `Stopped`，日志出现：
+  `CodeIntegrity 3077/3033 ... did not meet the Enterprise signing level requirements`
+  解决：关闭「智能应用控制」或「内存完整性」，然后**重启**。
+- **杀毒 / Windows Defender**：请将 `C:\Program Files\rdpwarp`、`C:\rdpwarp` 加入排除项（脚本会自动添加；如仍被拦截请手动确认）。
+- **影子 / 远程控制**：客户端版仅支持「同用户」会话互影；跨用户影子需 **Windows Server + RDS**，且需管理员 + 启用组策略「设置远程控制的规则」+ 重启。工作组环境通常受限。
+- **首次运行**：需要管理员权限。脚本会自动发起 UAC 提权；若被拒绝，请右键「以管理员身份运行」或使用 `start.bat`。
 
 ## 静默安装 / 卸载
 

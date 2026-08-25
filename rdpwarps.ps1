@@ -16,6 +16,29 @@ param([switch]$Install,[switch]$Uninstall,[switch]$Help,[string]$GHMirror = "",[
 
 if ($GHMirror) { $env:GH_MIRROR = $GHMirror }
 
+# ===== 自动提权（UAC）=====
+# 首次运行时自动申请管理员权限并重启自身；UAC 被取消时提示手动提权。
+$script:IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $script:IsAdmin -and -not $env:RDPWARP_NO_ELEVATE) {
+    $elevPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
+    if ($elevPath) {
+        try {
+            $elevArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$elevPath`"")
+            if ($Install) { $elevArgs += '-Install' }
+            if ($Uninstall) { $elevArgs += '-Uninstall' }
+            if ($Help) { $elevArgs += '-Help' }
+            if ($GHMirror) { $elevArgs += '-GHMirror', "`"$GHMirror`"" }
+            if ($ExperimentalNoSym) { $elevArgs += '-ExperimentalNoSym' }
+            $elevProc = Start-Process powershell -Verb RunAs -ArgumentList $elevArgs -PassThru -ErrorAction Stop
+            $elevProc.WaitForExit()
+            exit $elevProc.ExitCode
+        } catch {
+            Write-Host '需要管理员权限（UAC 被取消或不可用）——请右键"以管理员身份运行"，或使用 start.bat。'
+            exit 1
+        }
+    }
+}
+
 $script:VERSION = "2.6.7"
 
 $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
