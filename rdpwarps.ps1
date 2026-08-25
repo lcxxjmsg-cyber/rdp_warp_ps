@@ -1781,8 +1781,7 @@ function Update-RdpwrapIni {
 
     $sources = @(
         @{Name='asmtron';Url='https://raw.githubusercontent.com/asmtron/rdpwrap/master/res/rdpwrap.ini'},
-        @{Name='sebaxakerhtc';Url='https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/master/rdpwrap.ini'},
-        @{Name='affinityv';Url='https://raw.githubusercontent.com/affinityv/INI-RDPWRAP/master/rdpwrap.ini'}
+        @{Name='sebaxakerhtc';Url='https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/master/rdpwrap.ini'}
     )
     foreach ($source in $sources) {
         Write-I "Checking $($source.Name) INI..."
@@ -2274,7 +2273,7 @@ $c=Get-Content $i -Raw -EA 0;$q=Test-RdpIniCandidate -Content $c -Version $k
 if($q.Valid){if(rh){exit 0};w"Static configuration exists but runtime health failed; restarting";Restart-Service TermService -Force -EA 0;Start-Sleep 3;if(rh){w"Runtime recovered after restart";exit 0}}elseif($q.Exists){w"Invalid local entry for $k`: $($q.Message)"}
 w"Need update for $k"
 $ok=$false;$m='MIRRORPLACEHOLDER'
-foreach($u in @('INI_ASMTRON','INI_SEBAX','INI_AFFINITY')){foreach($route in @($(if($m){($m-split','|ForEach-Object{$_.Trim().TrimEnd('/')+"/$u"})}),'https://gh-proxy.com/'+$u,'https://ghproxy.net/'+$u,'https://ghfast.top/'+$u,$u)|Where-Object{$_}|Select-Object -Unique){try{$n=Invoke-WebRequest $route -UseBasicParsing -TimeoutSec 20;$x=Merge-RdpIniCandidate -BaseContent $c -SourceContent $n.Content -Version $k;$q=Test-RdpIniCandidate -Content $x -Version $k;if($q.Valid){Copy-Item $i "$i.bak" -Force -EA 0;$x|Out-File $i -Encoding ASCII;$ok=$true;w"Validated and merged online configuration: $route";break}elseif($q.Exists){w"Rejected online entry: $($q.Message)"}}catch{w"Online failure ($route): $_"}};if($ok){break}}
+foreach($u in @('INI_ASMTRON','INI_SEBAX')){foreach($route in @($(if($m){($m-split','|ForEach-Object{$_.Trim().TrimEnd('/')+"/$u"})}),'https://gh-proxy.com/'+$u,'https://ghproxy.net/'+$u,'https://ghfast.top/'+$u,$u)|Where-Object{$_}|Select-Object -Unique){try{$n=Invoke-WebRequest $route -UseBasicParsing -TimeoutSec 20;$x=Merge-RdpIniCandidate -BaseContent $c -SourceContent $n.Content -Version $k;$q=Test-RdpIniCandidate -Content $x -Version $k;if($q.Valid){Copy-Item $i "$i.bak" -Force -EA 0;$x|Out-File $i -Encoding ASCII;$ok=$true;w"Validated and merged online configuration: $route";break}elseif($q.Exists){w"Rejected online entry: $($q.Message)"}}catch{w"Online failure ($route): $_"}};if($ok){break}}
 $a=if([Environment]::Is64BitProcess){'x64'}else{'x86'}
 $d="$env:ProgramFiles\rdpwarp\RDPWrapOffsetFinder_$a.dll"
 if(!$ok-and(Test-Path $d)){try{Add-Type @"
@@ -2286,7 +2285,6 @@ if($ok){Stop-Service TermService -Force -EA 0;Start-Sleep 1;Start-Service TermSe
     $scriptBody = $scriptBody.Replace('MIRRORPLACEHOLDER', $wdMirror)
     $scriptBody = $scriptBody.Replace('INI_ASMTRON', 'https://raw.githubusercontent.com/asmtron/rdpwrap/master/res/rdpwrap.ini')
     $scriptBody = $scriptBody.Replace('INI_SEBAX', 'https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/master/rdpwrap.ini')
-    $scriptBody = $scriptBody.Replace('INI_AFFINITY', 'https://raw.githubusercontent.com/affinityv/INI-RDPWRAP/master/rdpwrap.ini')
     try {
         $scriptBody | Out-File $script:WATCHDOG_SCRIPT -Encoding ASCII -Force
         $a = New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoP -W Hidden -Exec Bypass -File `"$($script:WATCHDOG_SCRIPT)`""
