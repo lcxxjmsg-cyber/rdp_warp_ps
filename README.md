@@ -29,22 +29,27 @@ Windows 的「远程桌面」默认一次只允许一个用户登录。这个工
 
 ## 快速开始
 
-先试试最简单的**远程运行**（无需下载任何文件）：
+### 方式一（推荐）：一行远程运行，自动提权 + 镜像加速
 
-**直连**：
+用 **[GitHub Script Entrance](https://github.com/lcxxjmsg-cyber/GitHub-Script-Entrance)** 启动器，一次搞定「免下载、自动 UAC 提权、走镜像下载、临时文件自动清理」：
+
+```powershell
+powershell "& ([scriptblock]::Create((irm 'https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/GitHub-Script-Entrance/main/launch.ps1'))) -r 'https://github.com/lcxxjmsg-cyber/rdp_warp_ps/blob/main/rdpwarps.ps1'"
+```
+
+> 会弹 **UAC**，点「是」。国内网络自动走镜像。更多用法（带参数、本地路径、落地运行）见上面的链接。
+
+### 方式二：直接远程执行（最小用法）
+
 ```powershell
 powershell -c "(irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
 ```
 
-**国内网络（走代理）**：
-```powershell
-powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
-```
-
-> - 脚本开头带 **UTF-8 BOM**，直接 `irm ... | iex` 会因 BOM 顶坏注释块而报错（提示 `<` 运算符保留 / RedirectionNotSupported），所以用 `.TrimStart([char]0xFEFF)` 去掉 BOM。
-> - 国内直连 `raw.githubusercontent.com` 常被卡，时通时断；遇到卡住就换**代理**写法。
-> - ⚠ 这种方式**无法自动提权**；需要管理员权限、或想长期/离线使用，请按下一节从 **Release** 下载后本地运行。
-> - 运行后选 **1** = 一键安装。
+> - 脚本开头带 **UTF-8 BOM**，直接 `irm ... | iex` 会因 BOM 顶坏注释块而报错（`<` 运算符保留 / RedirectionNotSupported），所以用 `.TrimStart([char]0xFEFF)` 去掉 BOM。
+> - 脚本内已内置自提权：本地文件运行会直接提权；`irm | iex` 运行则把源码写入临时文件后提权，跑完自动删除。
+> - 国内直连 `raw.githubusercontent.com` 常被卡、时通时断；卡住就换**方式一**，或加镜像前缀：
+>   `powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"`
+> - 运行后选 **1** = 一键安装。想长期/离线用，请按下一节从 **Release** 下载。
 
 ## 从 Release 下载使用
 
