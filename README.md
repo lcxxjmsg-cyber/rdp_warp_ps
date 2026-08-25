@@ -31,11 +31,18 @@ Windows 的「远程桌面」默认一次只允许一个用户登录。这个工
 
 先试试最简单的**远程运行**（无需下载任何文件）：
 
+**直连**：
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1|iex"
+powershell -c "(irm https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
 ```
 
-> - 国内网络可加代理前缀：`$env:GH_MIRROR='https://gh-proxy.com/';`
+**国内网络（走代理）**：
+```powershell
+powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/https://raw.githubusercontent.com/lcxxjmsg-cyber/rdp_warp_ps/main/rdpwarps.ps1).TrimStart([char]0xFEFF)|iex"
+```
+
+> - 脚本开头带 **UTF-8 BOM**，直接 `irm ... | iex` 会因 BOM 顶坏注释块而报错（提示 `<` 运算符保留 / RedirectionNotSupported），所以用 `.TrimStart([char]0xFEFF)` 去掉 BOM。
+> - 国内直连 `raw.githubusercontent.com` 常被卡，时通时断；遇到卡住就换**代理**写法。
 > - ⚠ 这种方式**无法自动提权**；需要管理员权限、或想长期/离线使用，请按下一节从 **Release** 下载后本地运行。
 > - 运行后选 **1** = 一键安装。
 
