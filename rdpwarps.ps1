@@ -2680,7 +2680,7 @@ function Get-RdpSessionList {
 }
 
 function Invoke-RdpShadow {
-    param([int]$SessionId = 0)
+    param([int]$SessionId = 0, [switch]$SkipConsent)
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-E '跨用户影子需要管理员（提升令牌）。请右键"以管理员身份运行"本工具。'
@@ -2695,9 +2695,14 @@ function Invoke-RdpShadow {
         if ($in -notmatch '^\d+$') { Write-W '无效输入'; return }
         $SessionId = [int]$in
     }
-    Write-I "发起: mstsc /shadow:$SessionId /control /noConsentPrompt  (本地影子，不带 /v:port)"
+    $args = @("/shadow:$SessionId", '/control')
+    if ($SkipConsent) { $args += '/noConsentPrompt' }
+    Write-I "发起: mstsc $($args -join ' ')  (本地影子，不带 /v:port)"
+    if ($SkipConsent) {
+        Write-W '带 /noConsentPrompt 仅当目标为自身/管理员会话可免同意；对普通用户可能被拒，若失败请重试（去掉 /noConsentPrompt）。'
+    }
     try {
-        Start-Process mstsc -ArgumentList @("/shadow:$SessionId", '/control', '/noConsentPrompt') -ErrorAction Stop
+        Start-Process mstsc -ArgumentList $args -ErrorAction Stop
         Write-S "已发起影子会话 $SessionId"
     } catch { Write-E "启动失败: $_" }
     Write-Host ""; cmd /c pause 2>&1 | Out-Null
