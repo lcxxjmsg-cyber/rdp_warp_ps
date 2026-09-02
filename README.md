@@ -50,7 +50,7 @@ Go to **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)**, do
 Most likely **Smart App Control / Memory Integrity** (code-integrity) is blocking the unsigned rdpwrap. Turn off "Smart App Control" and "Memory Integrity", **reboot**, and add `C:\Program Files\rdpwarp` and `C:\rdpwarp` to Defender exclusions.
 
 **Q2: Can I shadow another user's session?**
-Client editions only allow shadowing **your own** sessions. Cross-user shadowing needs **Windows Server + RDS** (admin + the "Set rules for remote control" policy + reboot).
+Shadowing **your own** sessions usually works automatically (from console or an RDP session). **Cross-user** shadowing **does work** on Windows Client, but the caller must be an **elevated administrator** (this is what grants the WinStation remote-control right `0x10`). Use the app's **Shadow → 发起影子** which launches `mstsc /shadow:<id> /control /noConsentPrompt` (for the local machine do **not** use `/v:host:port` — that gives "invalid computer name"). Whether a target-side **consent** prompt appears depends on the Shadow value (`1`/`3` ask for permission, `2`/`4` don't). Use **Shadow → 诊断** to verify caller elevation, listener ACL and sessions.
 
 **Q3: "Admin required"?**
 The script self-elevates automatically. If UAC is denied, right-click "Run as administrator" or use `start.bat`.

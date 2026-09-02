@@ -2669,6 +2669,61 @@ function Set-ShadowUserMenu {
     } while ($c -ne '0')
 }
 
+function Get-RdpSessionList {
+    $out = @()
+    qwinsta 2>$null | ForEach-Object {
+        if ($_ -match '^\s*>?\s*(\S+)\s+(\S+)\s+(\d+)\s+(\S+)') {
+            $out += [PSCustomObject]@{ Ptr=$Matches[1].TrimStart('>'); User=$Matches[2]; Id=[int]$Matches[3]; State=$Matches[4] }
+        }
+    }
+    return $out
+}
+
+function Invoke-RdpShadow {
+    param([int]$SessionId = 0)
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-E '跨用户影子需要管理员（提升令牌）。请右键"以管理员身份运行"本工具。'
+        cmd /c pause 2>&1 | Out-Null
+        return
+    }
+    $targets = @(Get-RdpSessionList | Where-Object { $_.Id -gt 0 })
+    if (-not $SessionId) {
+        Write-I "--- 可选目标会话 ---"
+        $targets | ForEach-Object { Write-I "  $($_.Id). $($_.User)  [$($_.State)] ($($_.Ptr))" }
+        $in = Read-Host "输入要影子的会话 ID"
+        if ($in -notmatch '^\d+$') { Write-W '无效输入'; return }
+        $SessionId = [int]$in
+    }
+    Write-I "发起: mstsc /shadow:$SessionId /control /noConsentPrompt  (本地影子，不带 /v:port)"
+    try {
+        Start-Process mstsc -ArgumentList @("/shadow:$SessionId", '/control', '/noConsentPrompt') -ErrorAction Stop
+        Write-S "已发起影子会话 $SessionId"
+    } catch { Write-E "启动失败: $_" }
+    Write-Host ""; cmd /c pause 2>&1 | Out-Null
+}
+
+function Show-ShadowDiagnostics {
+    $map = @{0='禁';1='完全/需同意';2='完全/免同意';3='查看/需同意';4='查看/免同意'}
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $isAdmin = (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $elev = ($id.Owner.Value -eq 'S-1-5-32-544')
+    Write-I "调用方: $($id.Name)   管理员=$isAdmin   已提升=$elev"
+    $pol = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name Shadow -ErrorAction SilentlyContinue).Shadow
+    Write-I "Shadow 策略值: $pol ($($map[[int]$pol]))"
+    Write-I "--- RDP-Tcp 监听器 ACL（0x10 = 可影他人会话） ---"
+    try { Get-CimInstance -Namespace root\CIMV2\TerminalServices -ClassName Win32_TSAccount -ErrorAction Stop | Where-Object TerminalName -eq 'RDP-Tcp' | ForEach-Object {
+        $a = (($_.PermissionsAllowed -band 0x10) -ne 0); $d = (($_.PermissionsDenied -band 0x10) -ne 0)
+        Write-I "  $($_.AccountName): 0x10 Allow=$a  Deny=$d"
+    } } catch { Write-W "ACL 查询失败: $_" }
+    Write-I "--- 会话 ---"
+    Get-RdpSessionList | Where-Object { $_.Id -gt 0 } | ForEach-Object { Write-I "  $($_.Id). $($_.User) ($($_.State))" }
+    Write-I "--- 影子引擎组件 ---"
+    foreach ($d in @('rdpshare.dll','rdpsharercom.dll','sessenv.dll','rdpcorets.dll')) { Write-I "  $d : $(Test-Path "$env:SystemRoot\System32\$d")" }
+    Write-W "结论: 同用户可互影(console/RDP)。跨用户需 管理员+提升令牌；本地影子勿用 /v:port；是否弹‘同意’由 Shadow 值(需/免同意)决定。"
+    Write-Host ""; cmd /c pause 2>&1 | Out-Null
+}
+
 function Set-RdpShadowing {
     do {
         $su = Get-ShadowUi
@@ -2694,12 +2749,16 @@ function Set-RdpShadowing {
         Write-Host "+----------------------------------------------------+" -ForegroundColor Cyan
         Write-Host "|  1. $(S 'global')" -ForegroundColor Yellow
         Write-Host "|  2. $(S 'user')" -ForegroundColor Yellow
+        Write-Host "|  3. 发起影子 (elevated mstsc /shadow)" -ForegroundColor Yellow
+        Write-Host "|  4. 影子诊断 (Diagnostics)" -ForegroundColor Yellow
         Write-Host "|  0. $(T 'back_main')" -ForegroundColor Green
         Write-Host "+----------------------------------------------------+" -ForegroundColor Cyan
         $c = Read-Host "> "
         switch ($c) {
             "1" { Set-ShadowGlobalMenu }
             "2" { Set-ShadowUserMenu }
+            "3" { Invoke-RdpShadow }
+            "4" { Show-ShadowDiagnostics }
             default { if ($c -ne '0') { Write-W (T 'inv_opt'); Start-Sleep -Milliseconds 800 } }
         }
     } while ($c -ne '0')
