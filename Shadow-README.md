@@ -62,8 +62,8 @@ mstsc /v:192.168.1.12 /shadow:7 /control /noConsentPrompt /prompt
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| This computer name is invalid | Target RDP uses a custom port (not 3389) | Set target port to **3389** |
-| The specified session is not connected | `/v` reached default 3389, but target isn't Active or is console | Ensure target is an **Active `rdp-tcp#N`** |
+| This computer name is invalid | A custom port was placed in `/v` (`/v:host:port`) — `mstsc /shadow` can't parse the port | Use `/v:host` (no port); shadowing uses SMB/RPC, so the RDP port doesn't matter |
+| The specified session is not connected | Target session isn't Active, or is the **console** session | Ensure the target is an **Active `rdp-tcp#N`** session |
 | Access denied (cross-machine) | No `/prompt`/creds; account not authorized on the target; or credential doesn't match the session (SID) | Add `/prompt` + the **target-authorized** account; prefer **that session's user** credentials |
 | Access denied (local cross-user) | Target session created under an old Shadow value; or target asked for consent | Re-login the target user; use `-ForceNoConsent` |
 | Why still need RPC after opening 445 | Shadow uses 139/445 + RPC(49152-65535) | Enable "File and Printer Sharing" + "Remote Desktop - Shadow" + the dynamic RPC range |
