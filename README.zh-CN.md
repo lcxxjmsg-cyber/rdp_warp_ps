@@ -58,7 +58,14 @@ powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/
 多半是 **Smart App Control / 内存完整性（代码完整性）** 拦了未签名的 rdpwrap。关闭「智能应用控制」和「内存完整性」，**重启**，并把 `C:\Program Files\rdpwarp`、`C:\rdpwarp` 加入 Defender 排除项。
 
 **Q2：能影子别人的会话吗？**
-影子「自己」的会话通常在 console 或 RDP 会话里都能自动完成；**跨用户影子在 Windows 客户端上「可以」**，但调用方必须是**提升后的管理员**（这正是授予 WinStation 遥控权 `0x10` 的凭据）。请用工具「**影子 → 发起影子**」启动 `mstsc /shadow:<id> /control`（**本机影子不要加 `/v:host:port`**，否则报「此计算机名无效」）。对**普通用户**会话会弹「同意」提示——Windows 不允许静默接管普通用户会话（`Shadow=2` 免同意通常只对**自己/管理员**会话自动生效），对该目标直接**走同意流程**，或让目标会话**重新登录**以读到免同意值。可用「**影子 → 诊断**」核对调用方是否提升、监听器 ACL 与会话。
+可以。本机影子用「**影子 → 发起影子-本机**」；**跨机**用「**发起影子-远程**」，即 `mstsc /v:<主机> /shadow:<id> /control /noConsentPrompt /prompt`。要求：
+- 调用方必须是**提升管理员**，且在**目标机**上拥有 WinStation 遥控权(0x10)；
+- 跨机需提供**目标机被授权账户**（工具 `-User/-Password` 用 cmdkey 缓存，或加 `/prompt` 弹窗输入）；
+- 目标会话须是**非 console、活动**的 `rdp-tcp#N`；**RDP 端口必须默认 3389**（`/shadow` 的 `/v` 不认自定义端口，会报「此计算机名无效」）；
+- 工具按目标策略(每用户→全局)拼 `/control` 与 `/noConsentPrompt`；`Shadow=2`=完全控制/免同意（官方推荐的「Full access without permission」TeamViewer 式）；普通用户目标仍可能要求同意（让其会话重登以读到免同意值）；
+- **console 会话不可影/不可被影**；**同一会话只能被影一次**（RDP 协议限制）。
+
+详见仓库里 **`Shadow-README.md`**（完整指南 + 排障）。
 
 **Q3：提示需要管理员权限？**
 脚本会自动提权；若 UAC 被取消，请右键「以管理员身份运行」或双击 `start.bat`。

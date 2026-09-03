@@ -50,7 +50,15 @@ Go to **[Releases](https://github.com/lcxxjmsg-cyber/rdp_warp_ps/releases)**, do
 Most likely **Smart App Control / Memory Integrity** (code-integrity) is blocking the unsigned rdpwrap. Turn off "Smart App Control" and "Memory Integrity", **reboot**, and add `C:\Program Files\rdpwarp` and `C:\rdpwarp` to Defender exclusions.
 
 **Q2: Can I shadow another user's session?**
-Shadowing **your own** sessions usually works automatically (from console or an RDP session). **Cross-user** shadowing **does work** on Windows Client, but the caller must be an **elevated administrator** (this grants the WinStation remote-control right `0x10`). In-app **Shadow → 发起影子** launches `mstsc /shadow:<id> /control` (for the local machine do **not** use `/v:host:port` — that gives "invalid computer name"). A target-side **consent** prompt shows for a **normal user** session (Windows won't silently shadow a regular user; `Shadow=2` no-consent usually auto-applies only to your own / Administrator sessions). For those targets simply **proceed through the consent prompt**, or re-login the target session so it picks up the no-consent value. Use **Shadow → 诊断** to verify caller elevation, listener ACL and sessions.
+Yes. Shadowing works locally (`主菜单 → 影子 → 发起影子-本机`) and **across machines** (`→ 发起影子-远程`), which launches `mstsc /v:<host> /shadow:<id> /control /noConsentPrompt /prompt`. Requirements:
+- The caller must be an **elevated administrator** with the WinStation remote-control right `0x10` on the **target** machine.
+- For cross-machine, provide a **target-authorized account** (via the tool's `-User/-Password`, which caches it with `cmdkey`, or add `/prompt` and type it when prompted).
+- The target session must be a **non-console, Active** `rdp-tcp#N` session; the **RDP port must be the default 3389** (`mstsc /shadow /v` doesn't accept a custom port — it gives "invalid computer name").
+- The tool reads the target shadow policy (per-user → global) to pick `/control` and `/noConsentPrompt`. `Shadow=2` = full control without consent (the recommended "Full access without permission" for a TeamViewer-style view); a normal-user target may still prompt for consent (re-login that session to pick it up).
+- A **console** session cannot be shadowed (or shadow others).
+- **Same session can only be shadowed once** (an RDP protocol limit).
+
+See **`Shadow-README.md`** in the repo for the full guide + troubleshooting.
 
 **Q3: "Admin required"?**
 The script self-elevates automatically. If UAC is denied, right-click "Run as administrator" or use `start.bat`.
