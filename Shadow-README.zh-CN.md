@@ -41,7 +41,8 @@ Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # 连接时弹窗输�
 ```
 
 参数：`-SessionId` / `-Remote <主机>` / `-User/-Password`（cmdkey 缓存）/ `-ForceConsent`、`-ForceNoConsent`、`-ViewOnly`。
-> **远程仅支持默认端口 3389**：`mstsc /shadow /v` 不认自定义端口（会报「此计算机名无效」）。
+> 影子经 **SMB/RPC(139/445 + 动态 RPC)** 建立，**与 RDP 监听端口无关**；被拒时请确认目标机放行「文件和打印机共享」与「远程桌面-影子(RdpSa)」防火墙规则。
+> 菜单「4」流程：输入主机 → 账户/密码 → **自动列出目标会话** → 选择或手动输入会话 ID（列不出时才手动输入）。
 
 ## 手动跨机影子（与工具等价）
 

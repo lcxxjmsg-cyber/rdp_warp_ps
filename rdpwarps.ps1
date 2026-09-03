@@ -2743,12 +2743,13 @@ function Invoke-RdpShadow {
     }
     if (-not $SessionId) {
         if ($targets.Count -gt 0) {
-            Write-I "--- 目标主机 $targetHost 可用会话 ---"
+            Write-I "--- 目标主机 $targetHost 可用会话（自动列出）---"
             $targets | ForEach-Object { Write-I "  $($_.Id). $($_.User)  [$($_.State)] ($($_.Ptr))" }
+            $in = Read-Host "输入要影子的会话 ID（从上面选一个，或手动输入；回车=取消)"
         } else {
-            Write-I '未能列出目标会话（未缓存凭据或 query session /server 失败）。可先 RDP 登录目标机再 qwinsta 查看会话 ID。'
+            Write-I '未能自动列出目标会话（未缓存凭据或 query session /server 失败）。'
+            $in = Read-Host "请手动输入目标会话 ID（可先 RDP 登录目标机用 qwinsta 查看；回车=取消)"
         }
-        $in = Read-Host "输入要影子的会话 ID (仅输入回车=取消)"
         if (-not $in -or $in -notmatch '^\d+$') { Write-W '已取消'; return }
         $SessionId = [int]$in
     }
@@ -2771,7 +2772,7 @@ function Invoke-RdpShadow {
     if ($fullControl) { $args += '/control' }
     if ($noConsent) { $args += '/noConsentPrompt' }
     if ($isRemote) {
-        Write-W '远程影子仅支持默认端口 3389；若目标为自定义端口会报"此计算机名无效"，请使目标端口=3389。'
+        Write-I '影子经 SMB/RPC(139/445 + 动态 RPC) 建立，与 RDP 监听端口无关；若被拒，请确保目标机放行「文件和打印机共享」与「远程桌面-影子」防火墙规则。'
         $args += "/v:$targetHost"
         if (-not $User) { $args += '/prompt' }
     }
@@ -2842,13 +2843,10 @@ function Set-RdpShadowing {
             "4" {
                 $rh = Read-Host "远程主机 (IP 或主机名)"
                 if (-not $rh) { Write-W '已取消'; continue }
-                $sidIn = Read-Host "目标会话 ID (直接回车则自动列出/手动输入)"
-                $sid = 0
-                if ($sidIn -match '^\d+$') { $sid = [int]$sidIn }
                 $ru = Read-Host "目标为授权账户 (留空则 /prompt 弹窗输入)"
                 $rp = ''
                 if ($ru) { $rp = Read-Host "该账户密码 (留空则不缓存)" }
-                Invoke-RdpShadow -Remote $rh -SessionId $sid -User $ru -Password $rp
+                Invoke-RdpShadow -Remote $rh -User $ru -Password $rp
             }
             "5" { Show-ShadowDiagnostics }
             default { if ($c -ne '0') { Write-W (T 'inv_opt'); Start-Sleep -Milliseconds 800 } }

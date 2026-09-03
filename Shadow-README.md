@@ -41,7 +41,8 @@ Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # prompts for credenti
 ```
 
 Parameters: `-SessionId` / `-Remote <host>` / `-User/-Password` (cmdkey cache) / `-ForceConsent` / `-ForceNoConsent` / `-ViewOnly`.
-> **Remote only supports the default port 3389**: `mstsc /shadow /v` does not accept a custom port (reports "This computer name is invalid").
+> Shadowing uses **SMB/RPC (139/445 + dynamic RPC)**, independent of the RDP listen port; if refused, make sure the target has "File and Printer Sharing" and "Remote Desktop - Shadow (RdpSa)" firewall rules enabled.
+> Menu "4" flow: enter host → account/password → **auto-list target sessions** → pick or type the session ID (manual input only if listing fails).
 
 ## Manual cross-machine shadow (same as the tool)
 
