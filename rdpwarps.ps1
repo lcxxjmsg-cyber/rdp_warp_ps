@@ -2742,16 +2742,14 @@ function Invoke-RdpShadow {
         @(Get-RdpSessionList | Where-Object { $_.Id -gt 0 -and $_.User -and $_.User -notmatch '^$' })
     }
     if (-not $SessionId) {
-        if ($targets.Count -eq 0) {
-            Write-E '无可用会话列表。远程请用 -User <账户>（自动 cmdkey 缓存凭据）后重试，或本地运行。'
-            Write-I '远程列会话示例: query session /server:<host>   (需先 cmdkey 缓存凭据)'
-            cmd /c pause 2>&1 | Out-Null
-            return
+        if ($targets.Count -gt 0) {
+            Write-I "--- 目标主机 $targetHost 可用会话 ---"
+            $targets | ForEach-Object { Write-I "  $($_.Id). $($_.User)  [$($_.State)] ($($_.Ptr))" }
+        } else {
+            Write-I '未能列出目标会话（未缓存凭据或 query session /server 失败）。可先 RDP 登录目标机再 qwinsta 查看会话 ID。'
         }
-        Write-I "--- 可选目标会话 ---"
-        $targets | ForEach-Object { Write-I "  $($_.Id). $($_.User)  [$($_.State)] ($($_.Ptr))" }
-        $in = Read-Host "输入要影子的会话 ID"
-        if ($in -notmatch '^\d+$') { Write-W '无效输入'; return }
+        $in = Read-Host "输入要影子的会话 ID (仅输入回车=取消)"
+        if (-not $in -or $in -notmatch '^\d+$') { Write-W '已取消'; return }
         $SessionId = [int]$in
     }
     $fullControl = $true; $noConsent = $true
@@ -2844,10 +2842,13 @@ function Set-RdpShadowing {
             "4" {
                 $rh = Read-Host "远程主机 (IP 或主机名)"
                 if (-not $rh) { Write-W '已取消'; continue }
+                $sidIn = Read-Host "目标会话 ID (直接回车则自动列出/手动输入)"
+                $sid = 0
+                if ($sidIn -match '^\d+$') { $sid = [int]$sidIn }
                 $ru = Read-Host "目标为授权账户 (留空则 /prompt 弹窗输入)"
                 $rp = ''
                 if ($ru) { $rp = Read-Host "该账户密码 (留空则不缓存)" }
-                Invoke-RdpShadow -Remote $rh -User $ru -Password $rp
+                Invoke-RdpShadow -Remote $rh -SessionId $sid -User $ru -Password $rp
             }
             "5" { Show-ShadowDiagnostics }
             default { if ($c -ne '0') { Write-W (T 'inv_opt'); Start-Sleep -Milliseconds 800 } }
