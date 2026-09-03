@@ -20,7 +20,7 @@
 - **Credentials**: for `mstsc /v` cross-machine, pass **`/prompt`** to use the credentials you type; **without `/prompt` it uses the current user's credentials**.
 - **Consent**: even in no-consent mode the target may show "`PC\admin` is requesting to view your session. Do you accept?"; `/noConsentPrompt` suppresses it.
 - **Control**: only `/control` lets you drive the mouse/keyboard; without it it's **view only**.
-- **Limits**: the shadow goes **black/paused** if the target session is locked or has a UAC Secure-Desktop prompt; a **console** session cannot be shadowed; **a session can only be shadowed once** (RDP protocol limit).
+- **Limits**: the shadow goes **black/paused** if the target session is locked or has a UAC Secure-Desktop prompt; **a session can only be shadowed once** (RDP protocol limit). Note: a **console** session *can* be shadowed (confirmed in practice; some Microsoft docs claim otherwise, but that is not the behavior here).
 
 ## ⚠ Key practical difference (tested)
 
@@ -63,7 +63,7 @@ mstsc /v:192.168.1.12 /shadow:7 /control /noConsentPrompt /prompt
 | Symptom | Cause | Fix |
 |---|---|---|
 | This computer name is invalid | A custom port was placed in `/v` (`/v:host:port`) — `mstsc /shadow` can't parse the port | Use `/v:host` (no port); shadowing uses SMB/RPC, so the RDP port doesn't matter |
-| The specified session is not connected | Target session isn't Active, or is the **console** session | Ensure the target is an **Active `rdp-tcp#N`** session |
+| The specified session is not connected | Target session isn't in a shadowable/Active state | Ensure the target is an **Active** session (a console session is fine) |
 | Access denied (cross-machine) | No `/prompt`/creds; account not authorized on the target; or credential doesn't match the session (SID) | Add `/prompt` + the **target-authorized** account; prefer **that session's user** credentials |
 | Access denied (local cross-user) | Target session created under an old Shadow value; or target asked for consent | Re-login the target user; use `-ForceNoConsent` |
 | Why still need RPC after opening 445 | Shadow uses 139/445 + RPC(49152-65535) | Enable "File and Printer Sharing" + "Remote Desktop - Shadow" + the dynamic RPC range |
