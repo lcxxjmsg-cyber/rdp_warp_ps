@@ -36,8 +36,8 @@ Interactive menu: **Shadow → 3 (local) / 4 (remote) / 5 (diagnostics)**. Or di
 Invoke-RdpShadow -SessionId 7
 
 # Cross-machine (auto /v; -User cache via cmdkey, otherwise /prompt)
-Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7 -User 65633 -Password 'lengye521'
-Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # prompts for credentials
+Invoke-RdpShadow -Remote <host> -SessionId 7 -User <target-authorized-user> -Password '<password>'
+Invoke-RdpShadow -Remote <host> -SessionId 7        # prompts for credentials
 ```
 
 Parameters: `-SessionId` / `-Remote <host>` / `-User/-Password` (cmdkey cache) / `-ForceConsent` / `-ForceNoConsent` / `-ViewOnly`.
@@ -53,9 +53,9 @@ Parameters: `-SessionId` / `-Remote <host>` / `-User/-Password` (cmdkey cache) /
 ## Manual cross-machine shadow (same as the tool)
 
 ```powershell
-cmdkey /add:192.168.1.12 /user:target-session-user /pass:password   # cache creds
-query session /server:192.168.1.12                                  # list remote sessions (needs cmdkey creds)
-mstsc /v:192.168.1.12 /shadow:7 /control /noConsentPrompt /prompt
+cmdkey /add:<host> /user:target-session-user /pass:password   # cache creds
+query session /server:<host>                                  # list remote sessions (needs cmdkey creds)
+mstsc /v:<host> /shadow:7 /control /noConsentPrompt /prompt
 ```
 
 ## Troubleshooting

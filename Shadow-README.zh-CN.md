@@ -36,8 +36,8 @@
 Invoke-RdpShadow -SessionId 7
 
 # 跨机远程影子（自动 /v；提供 -User 则先 cmdkey 缓存凭据，否则 /prompt 弹窗输入）
-Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7 -User 65633 -Password 'lengye521'
-Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # 连接时弹窗输凭据
+Invoke-RdpShadow -Remote <主机> -SessionId 7 -User <目标授权账户> -Password '<密码>'
+Invoke-RdpShadow -Remote <主机> -SessionId 7        # 连接时弹窗输凭据
 ```
 
 参数：`-SessionId` / `-Remote <主机>` / `-User/-Password`（cmdkey 缓存）/ `-ForceConsent`、`-ForceNoConsent`、`-ViewOnly`。
@@ -53,9 +53,9 @@ Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # 连接时弹窗输�
 ## 手动跨机影子（与工具等价）
 
 ```powershell
-cmdkey /add:192.168.1.12 /user:目标会话账户 /pass:密码   # 缓存凭据
-query session /server:192.168.1.12                        # 远程列会话(依赖 cmdkey 凭据)
-mstsc /v:192.168.1.12 /shadow:7 /control /noConsentPrompt /prompt
+cmdkey /add:<主机> /user:目标会话账户 /pass:密码   # 缓存凭据
+query session /server:<主机>                        # 远程列会话(依赖 cmdkey 凭据)
+mstsc /v:<主机> /shadow:7 /control /noConsentPrompt /prompt
 ```
 
 ## 常见问题
