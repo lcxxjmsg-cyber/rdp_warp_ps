@@ -41,8 +41,14 @@ Invoke-RdpShadow -Remote 192.168.1.12 -SessionId 7        # prompts for credenti
 ```
 
 Parameters: `-SessionId` / `-Remote <host>` / `-User/-Password` (cmdkey cache) / `-ForceConsent` / `-ForceNoConsent` / `-ViewOnly`.
-> Shadowing uses **SMB/RPC (139/445 + dynamic RPC)**, independent of the RDP listen port; if refused, make sure the target has "File and Printer Sharing" and "Remote Desktop - Shadow (RdpSa)" firewall rules enabled.
-> Menu "4" flow: enter host → account/password → **auto-list target sessions** → pick or type the session ID (manual input only if listing fails).
+
+## Shadow firewall (tool menu "Shadow → 6 Enable Shadow Firewall")
+
+- Shadowing uses **SMB/RPC (139/445 + dynamic RPC)**, independent of the RDP listen port. The tool opens:
+  `Remote Desktop - Shadow (TCP-In)` (allows RdpSa.exe) + `File and Printer Sharing SMB(445)/NB-Session(139)/RPC-EPMAP(135)`.
+- ⚠ **Ports are fixed & not changeable**: shadow is hard-wired to **445/139 + dynamic RPC (49152-65535)** — there is no `PortNumber`-style setting.
+- ⚠ **ISPs usually block 445/139/RPC on the public internet** → shadowing is **LAN-oriented**; over the **internet** use a **VPN / tunnel** (WireGuard/OpenVPN/ZeroTier to carry SMB/RPC) or a different remote-assistance tool.
+- Menu "4" flow: enter host → account/password → **auto-list target sessions** → pick or type the session ID (manual input only if listing fails).
 
 ## Manual cross-machine shadow (same as the tool)
 

@@ -2801,7 +2801,25 @@ function Show-ShadowDiagnostics {
     Get-RdpSessionList | Where-Object { $_.Id -gt 0 } | ForEach-Object { Write-I "  $($_.Id). $($_.User) ($($_.State))" }
     Write-I "--- 影子引擎组件 ---"
     foreach ($d in @('rdpshare.dll','rdpsharercom.dll','sessenv.dll','rdpcorets.dll')) { Write-I "  $d : $(Test-Path "$env:SystemRoot\System32\$d")" }
-    Write-W "结论: 同用户可互影(console/RDP)。跨用户需 管理员+提升令牌；本地影子勿用 /v:port；是否弹‘同意’由 Shadow 值(需/免同意)决定。"
+    Write-I "--- 影子防火墙(走 SMB/RPC) ---"
+    $sh = Get-NetFirewallRule -Name 'RemoteDesktop-Shadow-In-TCP' -EA 0
+    $smb = Get-NetFirewallRule -Name 'FPS-SMB-In-TCP' -EA 0
+    $rpc = Get-NetFirewallRule -Name 'FPS-RPCSS-In-TCP' -EA 0
+    Write-I "  RemoteDesktop-Shadow(RdpSa): " + $(if ($sh -and $sh.Enabled -eq 'True') { '已启用' } else { '未启用' })
+    Write-I "  SMB-In(445): " + $(if ($smb -and $smb.Enabled -eq 'True') { '已启用' } else { '未启用' }) + "    RPC-EPMAP(135): " + $(if ($rpc -and $rpc.Enabled -eq 'True') { '已启用' } else { '未启用' })
+    Write-W "结论: 同用户可互影(console/RDP)。跨用户需 管理员+提升令牌；跨机需在目标机被授权账户凭据；是否弹‘同意’由 Shadow 值(需/免同意)决定。影子端口固定(445/139/动态RPC)不可改，公网被 ISP 封，请用 VPN/隧道。"
+    Write-Host ""; cmd /c pause 2>&1 | Out-Null
+}
+
+function Enable-RdpShadowFirewall {
+    $did = 0
+    if (-not (Get-NetFirewallRule -Name 'RemoteDesktop-Shadow-In-TCP' -EA 0)) {
+        try { New-NetFirewallRule -Name 'RemoteDesktop-Shadow-In-TCP' -DisplayName 'Remote Desktop - Shadow (TCP-In)' -Direction Inbound -Action Allow -Program "$env:SystemRoot\system32\RdpSa.exe" -Profile Any -ErrorAction Stop | Out-Null; $did++ } catch { Write-W "创建 RdpSa 影子规则失败: $($_.Exception.Message)" }
+    } elseif ((Get-NetFirewallRule -Name 'RemoteDesktop-Shadow-In-TCP').Enabled -eq 'False') { Enable-NetFirewallRule -Name 'RemoteDesktop-Shadow-In-TCP' -EA 0; $did++ }
+    Get-NetFirewallRule -Name 'FPS-SMB-In-TCP','FPS-SMB-In-TCP-V2','FPS-SMB-In-TCP-NoScope','FPS-NB_Session-In-TCP','FPS-NB_Session-In-TCP-NoScope','FPS-RPCSS-In-TCP','FPS-RPCSS-In-TCP-V2','FPS-RPCSS-In-TCP-NoScope' -EA 0 | ForEach-Object { if ($_.Enabled -eq 'False') { Enable-NetFirewallRule -Name $_.Name -EA 0 | Out-Null; $did++ } }
+    Write-S "影子防火墙已就绪（新增/启用 $did 条）。"
+    Write-I '包括: 远程桌面-影子(RdpSa) 入站; 文件和打印机共享 SMB(445)/NB-Session(139)/RPC-EPMAP(135)。'
+    Write-I '影子走 SMB/RPC 固定端口，无法自定义；运营商通常在公网封 445/139/RPC，局域网内可用，公网请用 VPN/隧道或其它远程协助工具。'
     Write-Host ""; cmd /c pause 2>&1 | Out-Null
 }
 
@@ -2833,6 +2851,7 @@ function Set-RdpShadowing {
         Write-Host "|  3. 发起影子-本机" -ForegroundColor Yellow
         Write-Host "|  4. 发起影子-远程 (mstsc /v /shadow /prompt)" -ForegroundColor Yellow
         Write-Host "|  5. 影子诊断 (Diagnostics)" -ForegroundColor Yellow
+        Write-Host "|  6. 启用影子防火墙 (SMB/RPC + RdpSa)" -ForegroundColor Yellow
         Write-Host "|  0. $(T 'back_main')" -ForegroundColor Green
         Write-Host "+----------------------------------------------------+" -ForegroundColor Cyan
         $c = Read-Host "> "
@@ -2849,6 +2868,7 @@ function Set-RdpShadowing {
                 Invoke-RdpShadow -Remote $rh -User $ru -Password $rp
             }
             "5" { Show-ShadowDiagnostics }
+            "6" { Enable-RdpShadowFirewall }
             default { if ($c -ne '0') { Write-W (T 'inv_opt'); Start-Sleep -Milliseconds 800 } }
         }
     } while ($c -ne '0')
