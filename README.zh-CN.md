@@ -65,7 +65,7 @@ powershell -c "$env:GH_MIRROR='https://gh-proxy.com/';(irm https://gh-proxy.com/
 - 工具按目标策略(每用户→全局)拼 `/control` 与 `/noConsentPrompt`；`Shadow=2`=完全控制/免同意（官方推荐的「Full access without permission」TeamViewer 式）；普通用户目标仍可能要求同意（让其会话重登以读到免同意值）；
 - **console 会话不可影/不可被影**；**同一会话只能被影一次**（RDP 协议限制）。
 
-详见仓库里 **`Shadow-README.md`**（完整指南 + 排障）。
+详见仓库里 **`Shadow-README.zh-CN.md`**（完整指南 + 排障）。
 
 **Q3：提示需要管理员权限？**
 脚本会自动提权；若 UAC 被取消，请右键「以管理员身份运行」或双击 `start.bat`。
